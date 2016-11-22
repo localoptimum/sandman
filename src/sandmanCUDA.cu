@@ -67,9 +67,53 @@
 //////////////////////////////////////////////////////////////////////////////////
 
 
-#include <sandmanCUDA.h>
+#include <curand.h>
+#include <helper_cuda.h>
+#include <cuda_runtime_api.h>
+#include <math.h>
+#include <fstream>
+#include <iostream>
+
+#include "../include/sandmanCUDA.h"
 
 //#define DEBUG 1
+
+const float thetaCritNickel=0.099138;
+const float thetaCritStandardLambda = 1.0;
+const int maxElements = 10000000;
+const float deadWeight = 0.001;
+//const float nickelReflectivity = 0.98;
+//const float criticalReflectivity = 0.75;
+
+
+std::string remove_extension(const std::string& filename) 
+{
+  
+  size_t lastdot = filename.find_last_of(".");
+  
+  if (lastdot == std::string::npos) 
+    return filename;
+  
+  return (filename.substr(0, lastdot)); 
+}
+
+
+
+__host__ __device__
+static inline float radians2degrees(const float radians)
+{
+  return(radians * 180.0f / (float)M_PI);
+}
+
+__host__ __device__
+static inline float degrees2radians(const float degrees)
+{
+  return(degrees * (float)M_PI / 180.0f);
+}
+
+
+
+
 
 
 
@@ -628,9 +672,9 @@ static float device_critical_theta(const double wavln, /**< Wavelength of incide
 					  const double mValue)/**< m value of the surface. */
 {
 	double ans;
-	ans = wavln * mValue / THETA_CRIT_STANDARD_LAMBDA;
-	ans = ans * DEGREES_TO_RADIANS;
-	ans = ans * THETA_CRIT_NICKEL;
+	ans = wavln * mValue / thetaCritStandardLambda;
+	ans = degrees2radians(ans);
+	ans = ans * thetaCritNickel;
 	return( ans);
 }
 
@@ -997,7 +1041,7 @@ static void global_sandReflection(float *d_pointsY, float *d_pointsTheta, const 
   if(i<numElements)
     {
       // Ignore dead neutrons
-      if(d_weight[i] > DEAD_WEIGHT)
+      if(d_weight[i] > deadWeight)
 	{
 	  do
 	    {
@@ -1104,6 +1148,11 @@ Sandman::Sandman(void)
   numElements = 100;
   int nDevices;
 
+  flux = -1.0;
+  eFlux = -1.0;
+  traj = -1.0;
+  eTraj = -1.0;
+
   displayWelcome();
 
   cudaGetDeviceCount(&nDevices);
@@ -1140,6 +1189,11 @@ Sandman::Sandman(const int nE)
 
   numElements = nE;
   int nDevices;
+
+  flux = -1.0;
+  eFlux = -1.0;
+  traj = -1.0;
+  eTraj = -1.0;
 
   displayWelcome();
 
@@ -1230,10 +1284,29 @@ Sandman::~Sandman(void)
   printf("Shutting down random generator...\n");
   checkCudaErrors(curandDestroyGenerator(prngGPU));
 
+  report();
+
  }
 
 
 
+void Sandman::report(void)
+{
+  ///
+  /// Generates report of results
+  /// 
+  
+  std::cout << "Trajectory simulation complete." << std::endl;
+
+  std::cout << "Neutron counter:" << std::endl;
+  std::cout << "  Got " << flux << " pseudo neutrons (weight product from both planes)" << std::endl;
+  std::cout << "  c.f. " << 2.0*flux << " double neutrons in vitess, for same number of initial trajectories." << std::endl << std::endl;
+  
+  std::cout << "Trajectory counter:" << std::endl;
+  std::cout << "  Got " << traj << " pseudo neutrons (weight product from both planes)" << std::endl;
+  std::cout << "  c.f. " << 2.0*traj << " double neutrons in vitess, for same number of initial trajectories." << std::endl;
+  
+}
 
 
 
@@ -1260,7 +1333,7 @@ void Sandman::generateOneRandomArray(void)
 
 
 
-void Sandman::sandCountNeutrons(float *nSum, float *nSumErr)
+void Sandman::sandCountNeutrons(void)
 {
   ///
   /// Integrates over all trajectories to estimate the total neutron current.
@@ -1273,6 +1346,7 @@ void Sandman::sandCountNeutrons(float *nSum, float *nSumErr)
   ///   
 
   float *d_nSum;
+
   float h_nSum[1];  //count, error that way we have one memory transfer for everything
   
   checkCudaErrors(cudaMalloc((void **)&d_nSum, sizeof(float)));
@@ -1300,18 +1374,39 @@ void Sandman::sandCountNeutrons(float *nSum, float *nSumErr)
   //Copy total out of device memory for host reporting
   checkCudaErrors(cudaMemcpy(h_nSum, d_nSum, sizeof(float), cudaMemcpyDeviceToHost));
   
-  
-  std::cout << "Neutron counter:" << std::endl;
-  std::cout << "  Got " << h_nSum[0] << " pseudo neutrons (weight product from both planes)" << std::endl;
-  std::cout << "  c.f. " << 2.0*h_nSum[0] << " double neutrons in vitess, for same number of initial trajectories." << std::endl;
-
+  flux = *h_nSum;
+  //  eFlux = *d_nSum;
 }
 
 
 
 
 
-void Sandman::sandCountNeutronsSquareCorrected(float *nSum, float *nSumErr)
+void Sandman::sandCountNeutronsSquareCorrected()
+{
+  ///
+  /// Integrates over all trajectories to estimate the total neutron current,
+  /// and divides by Pi/2 to normalise for square window beam area
+  /// 
+  /// @param nSum pointer to single host memory float to store answer 
+  /// @param nSumErr pointer to single host memory float for statistical 
+  /// error on total
+  ///
+  /// \todo Either provide or remove nSum nSumErr functionality
+  ///   
+  
+  sandCountNeutrons();
+    
+  flux  = flux  / (M_PI/4.0f);
+
+  std::cout << "Square beam corrected neutron counter:" << std::endl;
+  std::cout << "  Got " << flux  << " pseudo neutrons (weight product from both planes)" << std::endl;
+}
+
+
+
+
+void Sandman::sandCountNeutronsCircleCorrected()
 {
   ///
   /// Integrates over all trajectories to estimate the total neutron current,
@@ -1325,38 +1420,12 @@ void Sandman::sandCountNeutronsSquareCorrected(float *nSum, float *nSumErr)
   ///   
   
 
-  float *d_nSum;
-  float h_nSum[1];  //count, error that way we have one memory transfer for everything
-  
-  checkCudaErrors(cudaMalloc((void **)&d_nSum, sizeof(float)));
+  sandCountNeutrons();
+    
+  flux  = flux / (M_PI/2.0f);
 
-  int threadsPerBlock = SANDMAN_CUDA_THREADS;
-  int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
-  printf("CUDA kernel count neutrons with %d blocks of %d threads\n", blocksPerGrid,
-	 threadsPerBlock);
-
-
-  // Zero the count on the host
-  h_nSum[0] = 0.0f;
-
-  // Copy the zero total to device memory
-  checkCudaErrors(cudaMemcpy(d_nSum, h_nSum, sizeof(float), cudaMemcpyHostToDevice));
-  
-  
-  printf("Counting up phase space\n");
-
-  // static void global_countNeutrons(float *numNeutrons, const float *weightH, const float *weightV, const float *modFlux, const int numElements)
-
-  global_countNeutrons<<<blocksPerGrid, threadsPerBlock>>>
-    (d_nSum, d_weightHg, d_weightVg, d_modFlux, numElements);
-
-  //Copy total out of device memory for host reporting
-  checkCudaErrors(cudaMemcpy(h_nSum, d_nSum, sizeof(float), cudaMemcpyDeviceToHost));
-  
-  h_nSum[0] = h_nSum[0] / (M_PI/2.0f);
-
-  std::cout << "Neutron counter:" << std::endl;
-  std::cout << "  Got " << h_nSum[0] << " pseudo neutrons (weight product from both planes)" << std::endl;
+  std::cout << "Circular beam corrected neutron counter:" << std::endl;
+  std::cout << "  Got " << flux  << " pseudo neutrons (weight product from both planes)" << std::endl;
 }
 
 
@@ -1936,7 +2005,7 @@ void Sandman::phaseSpaceMapHCPU(const char *filename)
   //Limit the output to 1000 points - this could be a shit load of data
   for(i=0; i<numElements && i<1000; i++)
     {
-      if(h_weight[i] > DEAD_WEIGHT)
+      if(h_weight[i] > deadWeight)
 	dataFile << h_pointsTheta[i] << "\t" << h_pointsY[i] << "\t" << h_weight[i] << std::endl;
     }
   
@@ -2669,8 +2738,9 @@ void Sandman::sample(const float width, const float height, const float win_widt
      deltaLambdag = 0.01;
 
 
+   /// \todo Replace this maxElements with the memory-dependent check
 
-   if(numElements > MAX_ELEMENTS)
+   if(numElements > maxElements)
      {
        std::cerr << "Maximum number of elements exceeded." << std::endl;
        exit(1);
@@ -2942,3 +3012,6 @@ void Sandman::sandGetPhaseSpaceV(float *h_pointsY, float *h_pointsTheta, float *
     checkCudaErrors(cudaMemcpy(h_pointsTheta, d_pointsThetaV, numElements * sizeof(float), cudaMemcpyDeviceToHost));
     checkCudaErrors(cudaMemcpy(h_weight, d_weightVg, numElements * sizeof(float), cudaMemcpyDeviceToHost));
 }
+
+
+

@@ -15,7 +15,7 @@
 #define DEGREES_TO_RADIANS M_PI/180.0
 #define RADIANS_TO_DEGREES 180.0/M_PI 
 
-
+#define SANDMAN_CUDA_THREADS 256
 
 
 
@@ -67,11 +67,18 @@ class Sandman {
   float lambdaMax;             /// Maximum wavelength in wavelength histogram
   int lambdaHistSize;          /// Number of elements in wavelength histogram array (max 100)
 
+
+  float flux;
+  float eFlux;
+  
+  float traj;
+  float eTraj;
   
 
   Sandman();
   Sandman(const int nE);
   ~Sandman();
+
 
   void generateBothRandomArrays(void);
   void generateOneRandomArray(void);
@@ -183,6 +190,8 @@ void sandApertureCUDA(const float window_width, const float window_height);
 
  private: 
   void displayWelcome(void);
+  void report(void);
+
   void allocateArrays(void);
   void generateRandomArray(float *array);
   void zeroHistogram1D(void);
