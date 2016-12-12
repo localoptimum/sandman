@@ -76,12 +76,13 @@
 
 #include "../include/sandmanCUDA.h"
 
-//#define DEBUG 1
+#define DEBUG 1
 
 const float thetaCritNickel=0.099138;
 const float thetaCritStandardLambda = 1.0;
 const int maxElements = 10000000;
-const float deadWeight = 0.001;
+const float deadWeight = 0.01;
+const float PI_FLOAT = 3.1415927;
 //const float nickelReflectivity = 0.98;
 //const float criticalReflectivity = 0.75;
 
@@ -102,15 +103,55 @@ std::string remove_extension(const std::string& filename)
 __host__ __device__
 static inline float radians2degrees(const float radians)
 {
-  return(radians * 180.0f / (float)M_PI);
+  return(radians * 180.0f / PI_FLOAT);
 }
 
 __host__ __device__
 static inline float degrees2radians(const float degrees)
 {
-  return(degrees * (float)M_PI / 180.0f);
+  return(degrees * PI_FLOAT / 180.0f);
 }
 
+
+__host__ __device__
+static inline float square2circleFlux(const float num)
+{
+  //Ratio of area of circle to area of square is PI/4
+  return ( num / (PI_FLOAT / 4.0f));
+}
+
+
+
+__host__ __device__
+static inline float fastPow2(float arg)
+{
+  return(arg*arg);
+}
+
+
+
+// __host__ __device__
+// static float elliptic_opening_curve(float xpos, float length, float fp1, float fp2, float outWidth) {
+//         //An ellipse where the entrance width is specified Code translated
+//         //directly from mathematica using CForm to avoid time expensive bugs
+
+//         float x0;
+	
+// 	x0 = (8*fp1 + 8*fp2 - 4.0f*sqrt(2)*Math.sqrt(2*fastPow2(fp1) +
+// 						     2*fastPow2(fp2) - 4*fp1*length - 4*fp2*length +
+// 						     4*fastPow2(length) + fastPow2(outWidth) +
+// 						     Math.sqrt((4*fastPow2(fp1) - 8*fp1*length + 4*fastPow2(length) +
+// 								fastPow2(outWidth))*(4*fastPow2(fp2) - 8*fp2*length +
+// 										     4*fastPow2(length) + fastPow2(outWidth)))))/16.0;
+	
+//         return(
+// 	       sqrt((4*(fp1 - x0)*(fp2 - x0)*(-x0 + xpos))/(fp1 + fp2 - 2*x0) -
+// 			 (1 - fastPow2(fp1 - fp2)/fastPow2(fp1 + fp2 - 2*x0))*fastPow2(-x0
+// 										       + xpos))
+//                 );
+	
+
+//     }
 
 
 
@@ -263,9 +304,6 @@ void blockReduce4_DO_NOT_USE(float *array)
 {
   //DOES NOT WORK!  There is a bug somewhere...
 
-
-
-
   // Sequential addressing plus uroll loops
   __shared__ float sharedTotal[512];
   
@@ -275,7 +313,7 @@ void blockReduce4_DO_NOT_USE(float *array)
   sharedTotal[tid] = array[tid];
   __syncthreads();
 
-  for(unsigned int s=SANDMAN_CUDA_THREADS/2; s >= 32; s>>=1)
+  for(unsigned int s=SANDMAN_CUDA_THREADS/2; s > 32; s>>=1)
     {
       if(tid < s)
 	{
@@ -300,6 +338,8 @@ void blockReduce4_DO_NOT_USE(float *array)
     {
       array[0] = sharedTotal[0];
     }
+
+  __syncthreads();
 }
 
 
@@ -317,7 +357,8 @@ void blockReduce4_DO_NOT_USE(float *array)
 __global__
 static void global_countNeutrons(float *numNeutrons, const float *weightH, const float *weightV, const float *modFlux, const int numElements)
 {
-  //Shared memory per thread block
+  //Shared memory per thread block We can just use 512 knowing that the number
+  //of threads will be 128 or 256 or something
   __shared__ float sharedTotal[512];
 
 
@@ -445,13 +486,17 @@ static void global_sandILLHCSModerator(float *d_modFluxH, float *d_weightH, cons
   
   float ymax, ymin;
   
-  ymax = 0.186f/2.0f;
+  ymax = 0.206f/2.0f;
   ymin = -ymax;
 
   int i = blockIdx.x*blockDim.x + threadIdx.x;
 
-  d_modFluxH[i] = illHCS(d_lambdag[i]);
-
+  //The sample module assigns the scaling factor related to solid angle, now we do moderator brightness
+  if(d_modFluxH[i] < 10.0f)
+    {
+      //That check means we did not already calculate the flux, so we need to do it now:
+      d_modFluxH[i] = d_modFluxH[i] * illHCS(d_lambdag[i]);
+    }
   //Modify the weight if the neutron misses For one moderator, it is an easy
   //window For multiple moderators, we need to set the weight to the initial
   //value, then add multiples of that to an initially zeroed accumulator
@@ -480,7 +525,12 @@ static void global_sandModerator1(float *d_modFluxH, float *d_weightH, const flo
 
   int i = blockIdx.x*blockDim.x + threadIdx.x;
 
-  d_modFluxH[i] = maxwellian(num, temp, d_lambdag[i]);
+  //The sample module assigns the scaling factor related to solid angle, now we do moderator brightness
+  if(d_modFluxH[i] < 10.0f)
+    {
+      //That check means we did not already calculate the flux, so we need to do it now:
+      d_modFluxH[i] = d_modFluxH[i] * maxwellian(num, temp, d_lambdag[i]);
+    }
 
   //Modify the weight if the neutron misses For one moderator, it is an easy
   //window For multiple moderators, we need to set the weight to the initial
@@ -508,6 +558,22 @@ static void global_sandSampleCUDA(float *d_pointsY, float *d_pointsTheta, float 
 }
 
 
+
+
+__global__
+static void global_initArray(float *d_array, const float value, const int numElements)
+{
+  int i = blockIdx.x*blockDim.x + threadIdx.x;
+      
+  if(i<numElements)
+    {
+      d_array[i] = value;
+    }
+}
+ 
+
+
+     
 
 __global__
 static void global_sandZeroHistogram1D(float d_histogram[100])
@@ -659,19 +725,19 @@ static void global_aperture(float *d_weight, const float *d_pointsY, const float
 
 
 
-__device__
-static float device_criticalReflectivity(float mValue)
+__host__ __device__
+inline float device_criticalReflectivity(float mValue)
 {
 	//Data taken from swiss neutronics.  approximates the correct m value using a quadratic fit to their data
 	return(-0.01288*mValue*mValue+0.98);
 }
 
 
-__device__
-static float device_critical_theta(const double wavln, /**< Wavelength of incident neutrons. */
+__host__ __device__
+inline float device_critical_theta(const double wavln, /**< Wavelength of incident neutrons. */
 					  const double mValue)/**< m value of the surface. */
 {
-	double ans;
+	float ans;
 	ans = wavln * mValue / thetaCritStandardLambda;
 	ans = degrees2radians(ans);
 	ans = ans * thetaCritNickel;
@@ -679,23 +745,23 @@ static float device_critical_theta(const double wavln, /**< Wavelength of incide
 }
 
 
-__device__
-static float device_reflectivity(const double theta_rads,	/**< Angle of incidence in radians. */
-		    const double lambda, const double mValue)		/**< m value of reflecting surface. */
+__host__ __device__
+float device_reflectivity(const float theta_rads,	/**< Angle of incidence in radians. */
+		    const float lambda, const float mValue)		/**< m value of reflecting surface. */
 {
 	
 
 	//m=1 critical angle
-	const double thetaCritM1 = device_critical_theta(lambda, 1.0);
+	const float thetaCritM1 = device_critical_theta(lambda, 1.0);
 	
 	//general critical angle
-	const double thetaCrit = device_critical_theta(lambda, mValue);
+	const float thetaCrit = device_critical_theta(lambda, mValue);
 	
-	const double dist = fabs(theta_rads);
+	const float dist = fabs(theta_rads);
 	
-	double attn0;
-	double attnGrad;
-	double ans;
+	float attn0;
+	float attnGrad;
+	float ans;
 	
 	if(dist <= thetaCritM1)
 	{
@@ -712,18 +778,7 @@ static float device_reflectivity(const double theta_rads,	/**< Angle of incidenc
 	}
 	else
 	{
-
-		//rounding errors may have occurred - 
-		//if the difference is within 16 decimal places forget the discrepancy
-		//	diff = fabs(fabs(dist) - thetaCrit);
-		//	if(diff < 1.0E-15)
-		//	{
-		//		ans = kneeRef;
-		//	}
-		//	else	//it's not rounding errors, we really are beyond critical theta, zero reflectivity
-		//	{
 		ans = 0.0;
-		//	}
 	}
 	
 	return(ans);
@@ -773,7 +828,7 @@ static void global_lambdaMonitor(float *lambdaHist, const float lambdaMin, const
 
   //Try doing this one neutron per thread, for fun - and simpler code ;)
 
-  // THIS IS SLOW, we need a faster, slightly more complex way
+  // THIS IS SLOW, we need a faster way
 
   //Boss thread zeros the shared counter
   if(tid == 0)
@@ -790,9 +845,10 @@ static void global_lambdaMonitor(float *lambdaHist, const float lambdaMin, const
   if(i<numElements)
     {
       //Add horizontal bit
-      targetBin = roundf( (lambda[i] - lambdaMin)/dLambda  );
+      targetBin = (int) roundf(-0.5f + (lambda[i] - lambdaMin)/dLambda  );
       
-      element = weightH[i] * weightV[i];
+      //be certain to send non-zero dLambda to this function!
+      element = weightH[i] * weightV[i] / dLambda;
 
       if(d_modflux != NULL)
 	{
@@ -800,8 +856,10 @@ static void global_lambdaMonitor(float *lambdaHist, const float lambdaMin, const
 	}
 
 
-      atomicAdd(&sharedLambdaHist[targetBin], element);
-      
+      if( (targetBin > 0) && (targetBin < 100) && (targetBin < histSize) )
+	{
+	  atomicAdd(&sharedLambdaHist[targetBin], element);
+	}
       // //Add vertical bit
       // targetBin = roundf( (lambdaV[i] - lambdaMin)/dLambda );
       // atomicAdd(&sharedLambdaHist[targetBin], weightV[i]);
@@ -1127,6 +1185,15 @@ void Sandman::allocateArrays(void)
   checkCudaErrors(cudaMalloc((void **)&d_histogram2D, 100*100* sizeof(float)));
   checkCudaErrors(cudaMalloc((void **)&d_histogram1D, 100* sizeof(float)));
 
+  //Moderator brightness curve
+   if(d_modFlux == NULL)
+     checkCudaErrors(cudaMalloc((void **)&d_modFlux, numElements * sizeof(float)));
+   
+   if(d_modFlux == NULL)
+     {
+       std::cerr << "ERROR: failure to allocate memory for moderator brightness curve" << std::endl;
+       exit(1);
+     }
   
 
 
@@ -1300,11 +1367,11 @@ void Sandman::report(void)
 
   std::cout << "Neutron counter:" << std::endl;
   std::cout << "  Got " << flux << " pseudo neutrons (weight product from both planes)" << std::endl;
-  std::cout << "  c.f. " << 2.0*flux << " double neutrons in vitess, for same number of initial trajectories." << std::endl << std::endl;
+  
   
   std::cout << "Trajectory counter:" << std::endl;
   std::cout << "  Got " << traj << " pseudo neutrons (weight product from both planes)" << std::endl;
-  std::cout << "  c.f. " << 2.0*traj << " double neutrons in vitess, for same number of initial trajectories." << std::endl;
+  
   
 }
 
@@ -1397,7 +1464,7 @@ void Sandman::sandCountNeutronsSquareCorrected()
   
   sandCountNeutrons();
     
-  flux  = flux  / (M_PI/4.0f);
+  flux  = flux  / (PI_FLOAT/4.0f);
 
   std::cout << "Square beam corrected neutron counter:" << std::endl;
   std::cout << "  Got " << flux  << " pseudo neutrons (weight product from both planes)" << std::endl;
@@ -1422,12 +1489,58 @@ void Sandman::sandCountNeutronsCircleCorrected()
 
   sandCountNeutrons();
     
-  flux  = flux / (M_PI/2.0f);
+  flux  = flux / (PI_FLOAT/2.0f);
 
   std::cout << "Circular beam corrected neutron counter:" << std::endl;
   std::cout << "  Got " << flux  << " pseudo neutrons (weight product from both planes)" << std::endl;
 }
 
+
+
+void Sandman::sandCountTrajectories(void)
+{
+  ///
+  /// Integrates over all trajectories to estimate the total neutron current.
+  /// 
+  /// @param nSum pointer to single host memory float to store answer 
+  /// @param nSumErr pointer to single host memory float for statistical 
+  /// error on total
+  ///
+  /// \todo Either provide or remove nSum nSumErr functionality
+  ///   
+
+  float *d_nSum;
+
+  float h_nSum[1];  //count, error that way we have one memory transfer for everything
+  
+  checkCudaErrors(cudaMalloc((void **)&d_nSum, sizeof(float)));
+
+  int threadsPerBlock = SANDMAN_CUDA_THREADS;
+  int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
+  printf("CUDA kernel count neutrons with %d blocks of %d threads\n", blocksPerGrid,
+	 threadsPerBlock);
+
+
+  // Zero the count on the host
+  h_nSum[0] = 0.0f;
+
+  // Copy the zero total to device memory
+  checkCudaErrors(cudaMemcpy(d_nSum, h_nSum, sizeof(float), cudaMemcpyHostToDevice));
+  
+  
+  printf("Counting up phase space\n");
+
+  // static void global_countNeutrons(float *numNeutrons, const float *weightH, const float *weightV, const float *modFlux, const int numElements)
+
+  global_countTrajectories<<<blocksPerGrid, threadsPerBlock>>>
+    (d_nSum, d_weightHg, d_weightVg, numElements);
+
+  //Copy total out of device memory for host reporting
+  checkCudaErrors(cudaMemcpy(h_nSum, d_nSum, sizeof(float), cudaMemcpyDeviceToHost));
+  
+  traj = *h_nSum;
+  //  eFlux = *d_nSum;
+}
 
 
 
@@ -1450,7 +1563,18 @@ void Sandman::lambdaMonitor(const std::string setFilename, const float setLambda
   
   lambdaMin = setLambdaMin;
   lambdaMax = setLambdaMax;
+  if(abs(lambdaMax - lambdaMin) < 0.0001)
+    {
+      //That would produce an error, make wavelength band 1.0 angstroms
+      lambdaMax = lambdaMin + 1.0f;
+    }
+
   lambdaHistSize = setLambdaHistSize;
+  
+  if(lambdaHistSize > 100)
+    {
+      lambdaHistSize = 100;
+    }
 
 
   manipulatedFilename = setFilename;
@@ -1511,26 +1635,42 @@ void Sandman::executeLambdaMonitor(void)
   
   if(h_lambdaHist == NULL)
     {
-      std::cerr << "ERROR allocating host memory in sandLambdaMonitor" << std::endl;
+      std::cerr << "ERROR: allocating host memory in executeLambdaMonitor" << std::endl;
       exit(1);
     }
 
   if(d_histogram1D == NULL)
     {
-      std::cerr << "ERROR device memory pointer is NULL in sandLambdaMonitor" << std::endl;
+      std::cerr << "ERROR: device memory pointer is NULL in executeLambdaMonitor" << std::endl;
       exit(1);
     }
 
+
+#ifdef DEBUG
+    cudaError_t errSync  = cudaGetLastError();
+    cudaError_t errAsync = cudaDeviceSynchronize();
+    if (errSync != cudaSuccess) 
+      std::cout << "Sync kernel error: " << cudaGetErrorString(errSync) << std::endl;
+    if (errAsync != cudaSuccess)
+      std::cout << "Async kernel error: " << cudaGetErrorString(errAsync) << std::endl;
+#endif
+
+
+  // Zero the count histogram
+  zeroHistogram1D();
+
+#ifdef DEBUG
+    if (errSync != cudaSuccess) 
+      std::cout << "Sync kernel error: " << cudaGetErrorString(errSync) << std::endl;
+    if (errAsync != cudaSuccess)
+      std::cout << "Async kernel error: " << cudaGetErrorString(errAsync) << std::endl;
+#endif
 
 
   int threadsPerBlock = SANDMAN_CUDA_THREADS;
   int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
   std::cout << "CUDA kernel lambdamonitor[" << lambdaHistSize << "] with " << blocksPerGrid << " blocks of " << threadsPerBlock << " threads" << std::endl;
 
-  // Zero the count histogram
-  zeroHistogram1D();
-
-   
   //void global_lambdaMonitor(float *lambdaHist, const float lambdaMin, const float dLambda, int histSize, const float *lambdaH, const float *lambdaV, const float *weightH, const float *weightV, const int numElements)
 
   global_lambdaMonitor<<<blocksPerGrid, threadsPerBlock>>>
@@ -1596,7 +1736,7 @@ void Sandman::sandPosMonitorH(const std::string filename, const float min, const
   
   int threadsPerBlock = SANDMAN_CUDA_THREADS;
   int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
-  printf("CUDA kernel skew with %d blocks of %d threads\n", blocksPerGrid,
+  printf("CUDA posMonitorH with %d blocks of %d threads\n", blocksPerGrid,
 	 threadsPerBlock);
 
   printf("H position monitor\n");
@@ -1630,6 +1770,14 @@ void Sandman::sandPosMonitorH(const std::string filename, const float min, const
   free(h_hist);
   
 }
+
+
+
+
+
+
+
+
 
 
 
@@ -1798,7 +1946,7 @@ void Sandman::phaseSpaceMapH(const char *filename)
   float dy;
   float dtheta;
   
-  double thLo, thHi, yLo, yHi;
+  float thLo, thHi, yLo, yHi;
 
 
   // h_histogram = (float*) malloc(100*100*sizeof(float));
@@ -1960,6 +2108,8 @@ void Sandman::phaseSpaceMapHCPU(const char *filename)
   float *h_pointsTheta=NULL;
   float *h_weight=NULL;
 
+  int dumped=0;
+
   h_pointsY = (float*) malloc(numElements*sizeof(float));
   if(h_pointsY == NULL)
     {
@@ -2002,11 +2152,14 @@ void Sandman::phaseSpaceMapHCPU(const char *filename)
       return;
     }
   
-  //Limit the output to 1000 points - this could be a shit load of data
-  for(i=0; i<numElements && i<1000; i++)
+  //Limit the output to 20000 points - this could be a shit load of data
+  for(i=0; i<numElements && dumped<200000; i++)
     {
       if(h_weight[i] > deadWeight)
-	dataFile << h_pointsTheta[i] << "\t" << h_pointsY[i] << "\t" << h_weight[i] << std::endl;
+	{
+	  dataFile << h_pointsTheta[i]*180.0f/PI_FLOAT << "\t" << h_pointsY[i] << "\t" << h_weight[i] << std::endl;
+	  dumped++;
+	}
     }
   
   dataFile.close();
@@ -2015,6 +2168,177 @@ void Sandman::phaseSpaceMapHCPU(const char *filename)
   free(h_pointsTheta);
   free(h_weight);
 }
+
+
+
+
+void Sandman::phaseSpaceMapVCPU(const char *filename)
+
+{
+
+  ///
+  /// Computes a full phase space map in the vertical plane, autodetecting
+  /// the boundaries.  This fuction runs on the CPU and requires the full
+  /// phase space to be copied over to host Ram, so it is SLOOOOOW.
+  ///
+  /// @param filename pointer to const char name of file to use for output of
+  /// the histogram.  
+  /// 
+  /// However, it is provided because it is probably very good for unit
+  /// testing etc.
+  ///
+
+  
+  float *h_pointsY=NULL;
+  float *h_pointsTheta=NULL;
+  float *h_weight=NULL;
+
+  h_pointsY = (float*) malloc(numElements*sizeof(float));
+  if(h_pointsY == NULL)
+    {
+      std::cerr << "phaseSpaceMapH cannot allocate memory for h_pointsY" << std::endl;
+      exit(1);
+    }
+
+  h_pointsTheta = (float*) malloc(numElements*sizeof(float));
+
+  if(h_pointsTheta == NULL)
+    {
+      std::cerr << "phaseSpaceMapH cannot allocate memory for h_pointsTheta" << std::endl;
+      exit(1);
+    }
+
+  h_weight = (float*) malloc(numElements*sizeof(float));
+
+  if(h_weight == NULL)
+    {
+      std::cerr << "phaseSpaceMapH cannot allocate memory for h_weight" << std::endl;
+      exit(1);
+    }
+
+
+
+  std::ofstream dataFile;
+  int i;
+
+  //Get data from GPU
+  
+  sandGetPhaseSpaceV(h_pointsY, h_pointsTheta, h_weight);
+
+
+  
+  dataFile.open(filename);
+  
+  if(!dataFile.good())
+    {
+      std::cerr << "ERROR opening " << filename << " for writing" << std::endl;
+      return;
+    }
+  
+  //Limit the output to 200000 points - this could be a shit load of data
+  for(i=0; i<numElements && i<200000; i++)
+    {
+      if(h_weight[i] > deadWeight)
+	dataFile << h_pointsTheta[i]*180.0f/PI_FLOAT << "\t" << h_pointsY[i] << "\t" << h_weight[i] << std::endl;
+    }
+  
+  dataFile.close();
+
+  free(h_pointsY);
+  free(h_pointsTheta);
+  free(h_weight);
+}
+
+
+
+
+void Sandman::debugPosPosCPU(const char *filename)
+{
+
+  ///
+  /// Computes a full phase space map in the vertical plane, autodetecting
+  /// the boundaries.  This fuction runs on the CPU and requires the full
+  /// phase space to be copied over to host Ram, so it is SLOOOOOW.
+  ///
+  /// @param filename pointer to const char name of file to use for output of
+  /// the histogram.  
+  /// 
+  /// However, it is provided because it is probably very good for unit
+  /// testing etc.
+  ///
+
+  
+  float *h_pointsH=NULL;
+  float *h_weightH=NULL;
+  float *h_pointsV=NULL;
+  float *h_weightV=NULL;
+
+
+
+  h_pointsH = (float*) malloc(numElements*sizeof(float));
+  if(h_pointsH == NULL)
+    {
+      std::cerr << "DebugPosPosCPU cannot allocate memory for h_pointsH" << std::endl;
+      exit(1);
+    }
+
+  h_pointsV = (float*) malloc(numElements*sizeof(float));
+  if(h_pointsV == NULL)
+    {
+      std::cerr << "DebugPosPosCPU cannot allocate memory for h_pointsV" << std::endl;
+      exit(1);
+    }
+
+  h_weightH = (float*) malloc(numElements*sizeof(float));
+  if(h_weightH == NULL)
+    {
+      std::cerr << "DebugPosPosCPU cannot allocate memory for h_weightH" << std::endl;
+      exit(1);
+    }
+
+  h_weightV = (float*) malloc(numElements*sizeof(float));
+  if(h_weightV == NULL)
+    {
+      std::cerr << "DebugPosPosCPU cannot allocate memory for h_weightV" << std::endl;
+      exit(1);
+    }
+
+  std::ofstream dataFile;
+  int i;
+  int dumped=0;
+
+  //Get data from GPU
+  
+  sandDebugPosPos(h_pointsH, h_weightH, h_pointsV, h_weightV);
+
+
+  
+  dataFile.open(filename);
+  
+  if(!dataFile.good())
+    {
+      std::cerr << "ERROR opening " << filename << " for writing" << std::endl;
+      return;
+    }
+  
+  //Limit the function to considering 100000 points - this could be a shit load of data
+  for(i=0; i<numElements && dumped < 100000; i++)
+    {
+      if(h_weightH[i] > deadWeight && h_weightV[i] > deadWeight)
+	{
+	  dataFile << h_pointsH[i] << "\t" << h_pointsV[i] << "\t" << h_weightH[i]*h_weightV[i] << std::endl;
+	  dumped++;
+	}
+    }
+  
+  dataFile.close();
+
+  free(h_pointsH);
+  free(h_pointsV);
+  free(h_weightH);
+  free(h_weightV);
+}
+
 
 
 
@@ -2038,7 +2362,7 @@ void Sandman::sandSkewCUDA(const float distance_m)
 
   
 
-   //void device_sandSkewCUDA(float *d_pointsY, const float *d_pointsTheta, float *d_weight, const double distance_m, const int numElements)
+   //void device_sandSkewCUDA(float *d_pointsY, const float *d_pointsTheta, float *d_weight, const float distance_m, const int numElements)
    
     global_sandSkewCUDA<<<blocksPerGrid, threadsPerBlock>>>
       (d_pointsYH, d_pointsThetaH, distance_m, numElements);
@@ -2159,15 +2483,7 @@ void Sandman::sandModerator(const float width,
    printf("CUDA kernel sandModerator of width %f and height %f with %d blocks of %d threads\n", width, height, blocksPerGrid,
 	  threadsPerBlock);
 
-   //Moderator brightness curve
-   if(d_modFlux == NULL)
-     checkCudaErrors(cudaMalloc((void **)&d_modFlux, numElements * sizeof(float)));
    
-   if(d_modFlux == NULL)
-     {
-       std::cerr << "ERROR: failure to allocate memory for moderator brightness curve" << std::endl;
-       exit(1);
-     }
    
    //static void global_sandModerator1(float *d_modFluxH, float *d_weightH, const float *d_lambdag, const float *d_pointsYH, const int numElements, const float width, const float hoffset, const float temp, const float num)
 
@@ -2193,6 +2509,8 @@ void Sandman::sandILLHCSModerator(void)
   /// via extrapolation.  This benchmark moderator was used in the NADS work,
   /// so is a useful cross-check.
   ///
+
+  sandApertureCUDA(0.186, 0.186);
   
    int threadsPerBlock = SANDMAN_CUDA_THREADS;
    int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
@@ -2493,11 +2811,11 @@ void Sandman::sandGuideElementCUDA(
   ///
 
   
-  const double guideAngleTop = atan( (exit_offset_v + 0.5*(exit_height - entr_height)) / length);
-  const double guideAngleBot = atan( (exit_offset_v + 0.5*(entr_height - exit_height)) / length);
+  const float guideAngleTop = atan( (exit_offset_v + 0.5*(exit_height - entr_height)) / length);
+  const float guideAngleBot = atan( (exit_offset_v + 0.5*(entr_height - exit_height)) / length);
 
-  const double guideAngleLeft = atan( (exit_offset_h + 0.5*(exit_width - entr_width)) / length);
-  const double guideAngleRight = atan( (exit_offset_h + 0.5*(entr_width - exit_width)) / length);
+  const float guideAngleLeft = atan( (exit_offset_h + 0.5*(exit_width - entr_width)) / length);
+  const float guideAngleRight = atan( (exit_offset_h + 0.5*(entr_width - exit_width)) / length);
 
   //Propagate the neutrons to the end of the guide first
   sandSkewCUDA(length);
@@ -2505,21 +2823,39 @@ void Sandman::sandGuideElementCUDA(
   //Reflect the vertical plane
   //sandReflectionH(const float mirrorY1, const float mirrorY2, const float mirrorAngle1, const float mirrorAngle2, const float mTop, const float mBottom, const int numElements)
   
-  sandReflectionH(
-		  0.5f*exit_width + exit_offset_h, // mirror top 
-		  -0.5f*exit_width + exit_offset_h,// mirror bottom
-		  guideAngleTop,
-		  guideAngleBot,
-		  mTop,
-		  mBottom);
+  // sandReflectionH(
+  // 		  0.5f*exit_width + exit_offset_h, // mirror top 
+  // 		  -0.5f*exit_width + exit_offset_h,// mirror bottom
+  // 		  guideAngleTop,
+  // 		  guideAngleBot,
+  // 		  mTop,
+  // 		  mBottom);
 
+  // sandReflectionV(
+  // 		  0.5f*exit_height + exit_offset_v, mirror top 
+  // 		  -0.5f*exit_height + exit_offset_v,mirror bottom
+  // 		  guideAngleLeft,
+  // 		  guideAngleRight,
+  // 		  mLeft,
+  // 		  mRight);
+
+  //ERROR - this was H, width, top, bottom!
   sandReflectionV(
-		  0.5f*exit_height + exit_offset_v, // mirror top 
-		  -0.5f*exit_height + exit_offset_v,// mirror bottom
-		  guideAngleLeft,
-		  guideAngleRight,
-		  mLeft,
-		  mRight);
+  		  0.5f*exit_height + exit_offset_v, //mirror top 
+  		  -0.5f*exit_height + exit_offset_v,//mirror bottom
+  		  guideAngleTop,
+  		  guideAngleBot,
+  		  mTop,
+  		  mBottom);
+
+  //ERROR - this was V, height, left right!
+  sandReflectionH(
+  		  0.5f*exit_width + exit_offset_h, //mirror top 
+  		  -0.5f*exit_width + exit_offset_h,//mirror bottom
+  		  guideAngleLeft,
+  		  guideAngleRight,
+  		  mLeft,
+  		  mRight);
 
 }
 
@@ -2545,6 +2881,9 @@ void Sandman::sandSimpleStraightGuide(
   ///
 
 
+  //Before we do anything else, kill neutrons missing the entrance of the guide.
+  sandApertureCUDA(width, height);
+
   sandGuideElementCUDA(length,
 		       width,
 		       width,
@@ -2556,8 +2895,8 @@ void Sandman::sandSimpleStraightGuide(
 		       0.0,
 		       mval,
 		       mval);
-  
 }
+
 
 
 void Sandman::sandCurvedGuide(
@@ -2590,11 +2929,14 @@ void Sandman::sandCurvedGuide(
 
   int i=0;
 
+  //Before we do anything else, kill neutrons missing the entrance of the guide.
+  sandApertureCUDA(width, height);
+
   if(radius != 0.0)
     {
       //Break into sections
       int numSections = (int) round(length / sectionLength);
-      double sectionAngle;
+      float sectionAngle;
 
       //Special case - one section.  
       //This is two tweaks of rotation surrounding a short, straight guide piece 
@@ -2608,7 +2950,18 @@ void Sandman::sandCurvedGuide(
 	  sandRotationH(sectionAngle);
 	  
 	  std::cout << "               SECTION " << i+1 << " OF";
-	  sandSimpleStraightGuide(length, width, height, mval);
+	  //sandSimpleStraightGuide(length, width, height, mval);
+	  sandGuideElementCUDA(length,
+		       width,
+		       width,
+		       0.0,
+		       mval,
+		       mval,
+		       height,
+		       height,
+		       0.0,
+		       mval,
+		       mval);
 	  
 	  std::cout << "               SECTION " << i+1 << " ";
 	  sandRotationH(sectionAngle);
@@ -2631,7 +2984,18 @@ void Sandman::sandCurvedGuide(
 			if(i != numSections-1)	//if we are not doing the last iteration so do a normal straight guide plus rotation
 			{
 				std::cout << "               SECTION " << i+1 << " OF";
-				sandSimpleStraightGuide(sectionLength, width, height, mval);
+				//sandSimpleStraightGuide(sectionLength, width, height, mval);
+				sandGuideElementCUDA(sectionLength,
+						     width,
+						     width,
+						     0.0,
+						     mval,
+						     mval,
+						     height,
+						     height,
+						     0.0,
+						     mval,
+						     mval);
 				
 				std::cout << "               SECTION " << i+1 << " ";
 				sandRotationH(sectionAngle);
@@ -2647,8 +3011,19 @@ void Sandman::sandCurvedGuide(
 					break;
 				
 				std::cout << "               SECTION " << i+1 << " OF";
-				sandSimpleStraightGuide(lastPiece, width, height, mval);
-								
+				//sandSimpleStraightGuide(lastPiece, width, height, mval);
+				sandGuideElementCUDA(lastPiece,
+						     width,
+						     width,
+						     0.0,
+						     mval,
+						     mval,
+						     height,
+						     height,
+						     0.0,
+						     mval,
+						     mval);
+				
 			}	
 
 		}
@@ -2731,6 +3106,13 @@ void Sandman::sample(const float width, const float height, const float win_widt
    const float v2xV = thetaMaxV - thetaMaxPrimeV;
    const float v2yV = yMaxV - yMinV;
 
+   //Normalisation of solid angle (NOTE: moderators are per cm2!)
+   const float a1  = 100.0f * 100.0f * width * height;
+   const float a2  = 100.0f * 100.0f * win_width * win_height;
+   const float deltaAdeltaO = a1 * a2 / (100.0f * 100.0f * win_dist*win_dist);
+
+   std::cout << "Solid angle normalisation: " << deltaAdeltaO << std::endl;
+
    deltaLambdag = fabs(lambdaMax-lambdaMin);
    if(deltaLambdag < 0.0001) // Zero wavelength band is going to screw up the
 			     // maths.  Put in an artificial, small band
@@ -2808,6 +3190,12 @@ void Sandman::sample(const float width, const float height, const float win_widt
       (d_pointsYV, d_pointsThetaV, d_weightVg, d_r1g, d_r2g, oxV, oyV, v1xV, v2xV, v2yV, numElements);
 
 
+    // Initialise trajectory brightness with the solid angle calculation    
+    std::cout << "CUDA kernel initArray on moderator flux with " << blocksPerGrid << " blocks of " << threadsPerBlock << " threads" << std::endl;
+    global_initArray<<<blocksPerGrid, threadsPerBlock>>>
+      (d_modFlux, deltaAdeltaO, numElements);
+
+
    //Now the work is done with the random numbers, the host program must later clean up the pointers
 }
 
@@ -2832,6 +3220,34 @@ void Sandman::sample(const float width, const float height, const float win_widt
 //       kernels                        //
 //                                      //
 //////////////////////////////////////////
+
+
+///
+/// Unit test setup function to seed the Y values
+///
+/// @param ypoints pointer to host memory that needs to be copied over
+///
+
+void Sandman::unitTestInitPhaseSpace(const float *ypoints, const float *pointsTheta, const float *weight)
+{
+  //Copy to device (lets use horizontal plane) to overwrite 
+  checkCudaErrors(cudaMemcpy(d_pointsYH, ypoints, 32*sizeof(float), cudaMemcpyHostToDevice));
+  checkCudaErrors(cudaMemcpy(d_pointsThetaH, pointsTheta, 32*sizeof(float), cudaMemcpyHostToDevice));
+  checkCudaErrors(cudaMemcpy(d_weightHg, weight, 32*sizeof(float), cudaMemcpyHostToDevice));
+  
+}
+
+
+
+void Sandman::unitTestGetPhaseSpace(float *ypoints, float *pointsTheta, float *weight)
+{
+  //Copy to device (lets use horizontal plane) to overwrite 
+  checkCudaErrors(cudaMemcpy(ypoints, d_pointsYH, 32*sizeof(float), cudaMemcpyDeviceToHost));
+  checkCudaErrors(cudaMemcpy(pointsTheta, d_pointsThetaH, 32*sizeof(float), cudaMemcpyDeviceToHost));
+  checkCudaErrors(cudaMemcpy(pointsTheta, d_weightHg, 32*sizeof(float), cudaMemcpyDeviceToHost));
+}
+
+
 
 void Sandman::displayWelcome(void)
 {
@@ -3013,5 +3429,17 @@ void Sandman::sandGetPhaseSpaceV(float *h_pointsY, float *h_pointsTheta, float *
     checkCudaErrors(cudaMemcpy(h_weight, d_weightVg, numElements * sizeof(float), cudaMemcpyDeviceToHost));
 }
 
+
+
+
+void Sandman::sandDebugPosPos(float *h_pointsH, float *h_weightH, float *h_pointsV, float *h_weightV)
+{
+  
+    // Copy the data off the card to make sure it makes sense back at the host
+    checkCudaErrors(cudaMemcpy(h_pointsH, d_pointsYH, numElements * sizeof(float), cudaMemcpyDeviceToHost));
+    checkCudaErrors(cudaMemcpy(h_weightH, d_weightHg, numElements * sizeof(float), cudaMemcpyDeviceToHost));
+    checkCudaErrors(cudaMemcpy(h_pointsV, d_pointsYV, numElements * sizeof(float), cudaMemcpyDeviceToHost));
+    checkCudaErrors(cudaMemcpy(h_weightV, d_weightVg, numElements * sizeof(float), cudaMemcpyDeviceToHost));
+}
 
 
