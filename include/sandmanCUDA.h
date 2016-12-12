@@ -1,3 +1,5 @@
+#include <curand.h>
+#include <string>
 
 #ifndef H_SANDMAN
 #define H_SANDMAN
@@ -29,32 +31,32 @@ class Sandman {
 			      ///wavelengths
   float *d_weightHg=NULL;     ///Pointer to GPU memory for horizontal
 			      ///statistical weight
-  float *d_weightVg=NULL;     ///Pointer to GPU memory for vertical
+  float *d_weightVg=NULL;     /// Pointer to GPU memory for vertical
 			      ///statistical weight
 
 
   //Temporary storage and variables for random numbers
-  float *d_r1g=NULL;          ///Pointer to GPU memory for random number array buffer 1
-  float *d_r2g=NULL;          ///Pointer to GPU memory for random number array buffer 2
-  curandGenerator_t prngGPU;  ///Random number generator object on GPU
-  unsigned int seed = 777;    ///Default random seed for mersenne twister
+  float *d_r1g=NULL;          ///< Pointer to GPU memory for random number array buffer 1
+  float *d_r2g=NULL;          ///< Pointer to GPU memory for random number array buffer 2
+  curandGenerator_t prngGPU;  ///< Random number generator object on GPU
+  unsigned int seed = 777;    ///< Default random seed for mersenne twister
   
-  float deltaLambdag=0.0;     ///Wavelength gap between histogram bins
+  float deltaLambdag=0.0;     ///< Wavelength gap between histogram bins
   
-  float *d_histogram1D=NULL;  ///Pointer to GPU memory for 1D histogram buffer (reusable)
-  float *d_histogram2D=NULL;  ///Pointer to GPU memory for 2D histogram buffer (reusable)
+  float *d_histogram1D=NULL;  ///< Pointer to GPU memory for 1D histogram buffer (reusable)
+  float *d_histogram2D=NULL;  ///< Pointer to GPU memory for 2D histogram buffer (reusable)
 
-  int numElements;            ///Number of elements in arrays (=number of trajectories)
+  int numElements;            ///< Number of elements in arrays (=number of trajectories)
 
   
   //Monitor arrays used as temporary storage and flags to be filled by
   //destructor
-  float *d_lambdaMonHist=NULL; /// Pointer to GPU memory for wavelength beam
-			       /// monitor histogram
-  std::string lambdaFileName;  /// File name of wavelength beam monitor histogram
-  float lambdaMin;             /// Minimum wavelength in wavelength histogram
-  float lambdaMax;             /// Maximum wavelength in wavelength histogram
-  int lambdaHistSize;          /// Number of elements in wavelength histogram array (max 100)
+  float *d_lambdaMonHist=NULL; ///< Pointer to GPU memory for wavelength beam
+			       ///< monitor histogram
+  std::string lambdaFileName;  ///< File name of wavelength beam monitor histogram
+  float lambdaMin;             ///< Minimum wavelength in wavelength histogram
+  float lambdaMax;             ///< Maximum wavelength in wavelength histogram
+  int lambdaHistSize;          ///< Number of elements in wavelength histogram array (max 100)
 
   
   float flux;
@@ -82,9 +84,10 @@ class Sandman {
 			  const float mRight, 
 			  const float entr_height,
 			  const float exit_height,
+			  const float exit_offset_v,
 			  const float mTop,
-			  const float mBottom,
-			  const float exit_offset_v);
+			  const float mBottom
+			    );
 
   void sandSimpleStraightGuide(
 		       const float length,
@@ -162,7 +165,7 @@ void sandCollimateCUDA(const float divergenceH, const float divergenceV);
 void sandApertureCUDA(const float window_width, const float window_height);
 
 
-  void sandCountTrajectories(float *nSum, float *nSumErr);
+  void sandCountTrajectories(void);
 
   void sandCountNeutrons(void);
   void sandCountNeutronsSquareCorrected(void);
@@ -172,10 +175,25 @@ void sandApertureCUDA(const float window_width, const float window_height);
   void sandPosMonitorH(const std::string filename, const float min, const float dval, int histSize);
 
   void phaseSpaceMapHCPU(const char *filename);
+  void phaseSpaceMapVCPU(const char *filename);
+  void debugPosPosCPU(const char *filename);
   void phaseSpaceMapH(const char *filename, const float ymin, const float ymax, const float thetaMin, const float thetaMax);
   void phaseSpaceMapH(const char *filename);  // auto detects the boundaries for you
 
-   void report(void);
+  void report(void);
+
+
+
+
+
+  //Unit testing functions
+  void unitTestInitPhaseSpace(const float *ypoints, const float *thetapoints, const float *weight);
+				     
+  void unitTestGetPhaseSpace(float *ypoints, float *thetapoints, float *weight);
+
+
+
+
 
  private: 
   void displayWelcome(void);
@@ -197,6 +215,7 @@ void sandApertureCUDA(const float window_width, const float window_height);
  
   void sandGetPhaseSpaceH(float *h_pointsY, float *h_pointsTheta, float *h_weight);
   void sandGetPhaseSpaceV(float *h_pointsY, float *h_pointsTheta, float *h_weight);
+  void sandDebugPosPos(float *h_pointsH, float *h_weightH, float *h_pointsV, float *h_weightV);
   
 };
 
