@@ -364,6 +364,8 @@ static void global_countNeutrons(float *numNeutrons, const float *weightH, const
 
   int i = blockIdx.x*blockDim.x + threadIdx.x;
   int tid = threadIdx.x;
+
+  const float nElements = (float) numElements;
   
   //Try doing this one neutron per thread, for fun - and simpler code ;)
 
@@ -376,7 +378,7 @@ static void global_countNeutrons(float *numNeutrons, const float *weightH, const
   //Each thread adds the weight of its neutron to the shared total
   if(i<numElements)
     {
-      sharedTotal[tid] = modFlux[i]*weightH[i]*weightV[i]/(float)numElements;
+      sharedTotal[tid] = modFlux[i]*weightH[i]*weightV[i]/nElements;
       __syncthreads();
       
       
@@ -430,6 +432,64 @@ static void global_countTrajectories(float *numNeutrons, const float *weightH, c
       __syncthreads();
     }
 }
+
+
+
+
+
+  
+__global__
+static void global_squeezeBenderChannel(float *ypos, float *channelNumber, const float width, const float channelWidth, const float waferThickness, const int numElements)
+{
+  // Calculates the total emitted neutron current represented by this
+  // trajectory, based on its interception with one moderator surace
+  // characterised by a single temperature temp, width width, positioned with
+  // an offset hoffset, and a brightness num
+  
+  int i = blockIdx.x*blockDim.x + threadIdx.x;
+
+  float relativeY;
+
+  if(i<numElements)
+    {
+      relativeY = ypos[i] + width/2.0f;
+      channelNumber[i] = roundf( relativeY / channelWidth );
+      
+      //Then we adjust the position to be within a single channel of the right thickness for the OPTICS
+      ypos[i] = relativeY;
+      ypos[i] = ypos[i] / (channelNumber[i]+1.0f);
+      ypos[i] = ypos[i] - 0.5f * (channelWidth-waferThickness);
+    }
+}
+
+
+__global__
+static void global_unSqueezeBenderChannel(float *ypos, const float *channelNumber, const float width, const float channelWidth, const float waferThickness, const int numElements)
+{
+  // Calculates the total emitted neutron current represented by this
+  // trajectory, based on its interception with one moderator surace
+  // characterised by a single temperature temp, width width, positioned with
+  // an offset hoffset, and a brightness num
+  
+  int i = blockIdx.x*blockDim.x + threadIdx.x;
+
+  if(i<numElements)
+    {
+
+      //Device reverses the position adjustment of sandSqueeze...
+      ypos[i] = ypos[i] + 0.5f * (channelWidth - waferThickness);
+      ypos[i] = ypos[i] * (channelNumber[i]+1.0f);
+      ypos[i] = ypos[i] - width/2.0f;
+    }
+}
+
+
+
+
+
+
+
+
 
 
 
@@ -1079,12 +1139,13 @@ __global__
 static void global_sandReflection(float *d_pointsY, float *d_pointsTheta, const float *d_lambda, float
 			   *d_weight, const float mirrorYtop, const float mirrorYbottom, const float mirrorAngleTop, const float mirrorAngleBottom, const float mTop, const float mBottom, const int numElements)
 {
-
+  
 
   int i = blockIdx.x*blockDim.x + threadIdx.x;
 
   bool finished=false;
  
+  float mval, mirrorAngle, mirrorY;
 
   // The next bit of code loops over all particles until they are no longer
   // reflected in the mirror(s).  The way it is written at the moment is that
@@ -1100,7 +1161,7 @@ static void global_sandReflection(float *d_pointsY, float *d_pointsTheta, const 
     {
       // Ignore dead neutrons
       if(d_weight[i] > deadWeight)
-	{
+      	{
 	  do
 	    {
 	      finished=true;
@@ -1109,9 +1170,10 @@ static void global_sandReflection(float *d_pointsY, float *d_pointsTheta, const 
 	      /* Reflect in the upper plane? */
 	      if(d_pointsY[i] > mirrorYtop)
 		{
-		  
 		  /* reflection in theta: first attenuate then reflect */
-		  d_weight[i] = device_attenuate_alpha(d_weight[i], d_lambda[i], fabs(d_pointsTheta[i] - mirrorAngleTop), mTop);
+		  //d_weight[i] = device_attenuate_alpha(d_weight[i], d_lambda[i], fabs(d_pointsTheta[i] - mirrorAngleTop), mTop);
+		  //d_weight[i] = device_attenuate_alpha(d_weight[i], d_lambda[i], fdimf(d_pointsTheta[i], mirrorAngleTop), mTop);
+		  d_weight[i] = device_attenuate_alpha(d_weight[i], d_lambda[i], fabsf(d_pointsTheta[i] - mirrorAngleTop), mTop);
 		  d_pointsTheta[i] = 2.0*mirrorAngleTop - d_pointsTheta[i];
 		  
 		  /* reflection in Y */
@@ -1125,7 +1187,9 @@ static void global_sandReflection(float *d_pointsY, float *d_pointsTheta, const 
 		{
 		  
 		  /* reflection in theta: first attenuate then reflect */
-		  d_weight[i] = device_attenuate_alpha(d_weight[i], d_lambda[i], fabs(d_pointsTheta[i] - mirrorAngleBottom), mBottom);
+		  //d_weight[i] = device_attenuate_alpha(d_weight[i], d_lambda[i], fabs(d_pointsTheta[i] - mirrorAngleBottom), mBottom);
+		  //d_weight[i] = device_attenuate_alpha(d_weight[i], d_lambda[i], fdimf(d_pointsTheta[i], mirrorAngleBottom), mBottom);
+		  d_weight[i] = device_attenuate_alpha(d_weight[i], d_lambda[i], fabsf(d_pointsTheta[i] - mirrorAngleBottom), mBottom);
 		  d_pointsTheta[i] = 2.0*mirrorAngleBottom - d_pointsTheta[i];
 		  
 		  /* reflection in Y */
@@ -1135,7 +1199,7 @@ static void global_sandReflection(float *d_pointsY, float *d_pointsTheta, const 
 		}
 	    }
 	  while (finished == false);
-	}  
+	  }  
     }
 }
 
@@ -1180,7 +1244,10 @@ void Sandman::allocateArrays(void)
   checkCudaErrors(cudaMalloc((void **)&d_pointsYV, numElements * sizeof(float)));
   checkCudaErrors(cudaMalloc((void **)&d_pointsThetaV, numElements * sizeof(float)));
   checkCudaErrors(cudaMalloc((void **)&d_weightVg, numElements * sizeof(float)));
-  
+
+  //Allocate device memory for temporary array (bender channel number, other funcs)  
+  checkCudaErrors(cudaMalloc((void **)&d_tempArray, numElements * sizeof(float)));
+
   //Allocate arrays for histograms
   checkCudaErrors(cudaMalloc((void **)&d_histogram2D, 100*100* sizeof(float)));
   checkCudaErrors(cudaMalloc((void **)&d_histogram1D, 100* sizeof(float)));
@@ -1334,6 +1401,9 @@ Sandman::~Sandman(void)
 
    if(d_weightVg != NULL)
      checkCudaErrors(cudaFree(d_weightVg));
+
+   if(d_tempArray != NULL)
+     checkCudaErrors(cudaFree(d_tempArray));
 
    if(d_histogram1D != NULL)
      checkCudaErrors(cudaFree(d_histogram1D));
@@ -1811,25 +1881,25 @@ void Sandman::phaseSpaceMapH(const char *filename, const float ymin, const float
   
   float *h_histogram=NULL;
   float *d_boundary=NULL;
-
+  
   float runningY = ymin;
   float runningTheta = thetaMin;
   float dy = fabs(ymax-ymin)/100.0f;
   float dtheta = fabs(thetaMax - thetaMin)/100.0f;
-
-
-
+  
+  
+  
   h_histogram = (float*) malloc(100*100*sizeof(float));
-
+  
   if(h_histogram == NULL)
     {
       std::cerr << "Error allocating host memory in phaseSpaceMapH" << std::endl;
       exit(1);
     }
-
+  
   std::ofstream dataFile;
   int i,j;
-
+  
   // Allocate device float for min, max etc
   checkCudaErrors(cudaMalloc((void **)&d_boundary, sizeof(float)));
   if(d_boundary == NULL)
@@ -1838,57 +1908,57 @@ void Sandman::phaseSpaceMapH(const char *filename, const float ymin, const float
       exit(1);
     }
   
-
   
-
+  
+  
   // Zero the count histogram
   zeroHistogram2D();
-
-
+  
+  
 #ifdef DEBUG
-    cudaError_t errSync  = cudaGetLastError();
-    cudaError_t errAsync = cudaDeviceSynchronize();
-    if (errSync != cudaSuccess) 
-      std::cout << "Sync kernel error: " << cudaGetErrorString(errSync) << std::endl;
-    if (errAsync != cudaSuccess)
-      std::cout << "Async kernel error: " << cudaGetErrorString(errAsync) << std::endl;
+  cudaError_t errSync  = cudaGetLastError();
+  cudaError_t errAsync = cudaDeviceSynchronize();
+  if (errSync != cudaSuccess) 
+    std::cout << "Sync kernel error: " << cudaGetErrorString(errSync) << std::endl;
+  if (errAsync != cudaSuccess)
+    std::cout << "Async kernel error: " << cudaGetErrorString(errAsync) << std::endl;
 #endif
-
-
-
-
+  
+  
+  
+  
   printf("2D histogram phase space H...\n\n");
   
-   int threadsPerBlock = SANDMAN_CUDA_THREADS;
-   int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
-   std::cout << "CUDA kernel rebinnedPhaseSpaceH with " << blocksPerGrid << " blocks of " << threadsPerBlock << " threads" << std::endl;
- 
-
-
-   //void global_rebinnedPhaseSpaceH(float globalHist[100][100], const float *d_pointsY, const float *d_pointsTheta, const float yMin, const float dy, const float thetaMin, const float dtheta, int histSize, const float *d_weight, const int numElements)
-
-    global_rebinnedPhaseSpaceH<<<blocksPerGrid, threadsPerBlock>>>
-      ((float (*)[100])d_histogram2D, d_pointsYH, d_pointsThetaH, ymin, dy, thetaMin, dtheta, 100, d_weightHg, numElements);
-
-
+  int threadsPerBlock = SANDMAN_CUDA_THREADS;
+  int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
+  std::cout << "CUDA kernel rebinnedPhaseSpaceH with " << blocksPerGrid << " blocks of " << threadsPerBlock << " threads" << std::endl;
+  
+  
+  
+  //void global_rebinnedPhaseSpaceH(float globalHist[100][100], const float *d_pointsY, const float *d_pointsTheta, const float yMin, const float dy, const float thetaMin, const float dtheta, int histSize, const float *d_weight, const int numElements)
+  
+  global_rebinnedPhaseSpaceH<<<blocksPerGrid, threadsPerBlock>>>
+    ((float (*)[100])d_histogram2D, d_pointsYH, d_pointsThetaH, ymin, dy, thetaMin, dtheta, 100, d_weightHg, numElements);
+  
+  
 #ifdef DEBUG
-    if (errSync != cudaSuccess) 
-      std::cout << "Sync kernel error: " << cudaGetErrorString(errSync) << std::endl;
-    if (errAsync != cudaSuccess)
-      std::cout << "Async kernel error: " << cudaGetErrorString(errAsync) << std::endl;
+  if (errSync != cudaSuccess) 
+    std::cout << "Sync kernel error: " << cudaGetErrorString(errSync) << std::endl;
+  if (errAsync != cudaSuccess)
+    std::cout << "Async kernel error: " << cudaGetErrorString(errAsync) << std::endl;
 #endif
-
-
-
-
-
+  
+  
+  
+  
+  
   //Get data from GPU
-   
-   checkCudaErrors(cudaMemcpy(h_histogram, d_histogram2D, 100*100 * sizeof(float), cudaMemcpyDeviceToHost));
-
-
-
-
+  
+  checkCudaErrors(cudaMemcpy(h_histogram, d_histogram2D, 100*100 * sizeof(float), cudaMemcpyDeviceToHost));
+  
+  
+  
+  
   
   dataFile.open(filename);
   
@@ -1903,21 +1973,21 @@ void Sandman::phaseSpaceMapH(const char *filename, const float ymin, const float
   
   for(i=0; i<100; i++)
     {
-  for(j=0; j<100; j++)
-    {
-  runningTheta = thetaMin + dtheta * (float) j;
-  runningY = ymin + dy * (float) i;
-  //[theta][y]
-  dataFile << runningTheta << " " << runningY << "  " << h_histogram[j*100+i] << std::endl;
-}
-}
+      for(j=0; j<100; j++)
+	{
+	  runningTheta = thetaMin + dtheta * (float) j;
+	  runningY = ymin + dy * (float) i;
+	  //[theta][y]
+	  dataFile << runningTheta << " " << runningY << "  " << h_histogram[j*100+i] << std::endl;
+	}
+    }
   
   dataFile.close();
   
   free(h_histogram);
   
   if(d_boundary != NULL)
-     checkCudaErrors(cudaFree(d_boundary));
+    checkCudaErrors(cudaFree(d_boundary));
 }
 
 
@@ -2078,7 +2148,7 @@ void Sandman::phaseSpaceMapH(const char *filename)
   // free(h_histogram);
 
   if(d_boundary != NULL)
-     checkCudaErrors(cudaFree(d_boundary));
+    checkCudaErrors(cudaFree(d_boundary));
 }
 
 
@@ -2173,7 +2243,6 @@ void Sandman::phaseSpaceMapHCPU(const char *filename)
 
 
 void Sandman::phaseSpaceMapVCPU(const char *filename)
-
 {
 
   ///
@@ -2864,7 +2933,8 @@ void Sandman::sandSimpleStraightGuide(
 		       const float length,
 		       const float width,
 		       const float height,
-		       const float mval)
+		       const float mval
+				      )
 {
 
   ///
@@ -2906,7 +2976,7 @@ void Sandman::sandCurvedGuide(
 		       const float height,
 		       const float mval,
 		       const float radius
-				 )
+			      )
 {
 
   ///
@@ -3029,11 +3099,63 @@ void Sandman::sandCurvedGuide(
 		}
 		
 		std::cout << "           - curved guide finished" << std::endl;
-
+		
 
     }
 
 }
+
+
+
+
+
+void Sandman::sandHorizontalBender(
+				   const float length,
+				   const float width,
+				   const float height,
+				   const int numChannels,
+				   const float waferThickness,
+				   const float radius,
+				   const float mval
+				   )
+{
+  //This is a one-off, but malloc is expensive to use repetitively, so use
+  //array of dedicated channel number floats
+  const float nChannels = (float) numChannels;
+  
+  if(nChannels < 1.0)
+    {
+      std::cerr << "ERROR: attempt to use horizontal bender with < 1 channels" << std::endl;
+      exit(1);
+    }
+
+  const float opticalWidth = (width / nChannels) - waferThickness*(nChannels - 1.0f);
+
+  if(opticalWidth < 0.001)
+    {
+      std::cerr << "ERROR: optical width is less than 1 mm in horizontal bender module (value is " << opticalWidth << ")" << std::endl;
+      exit(1);
+    }
+
+  //First squeeze the neutrons into the channel
+  sandSqueezeHorizontalBenderChannels(width, nChannels, waferThickness);
+
+  //Output horizontal phase space to see what is going on
+  //phaseSpaceMapHCPU("benderPhaseSpaceDebug.dat");
+
+  //Aperture is done inside curved guide module automatically
+  //sandApertureCUDA(opticalWidth, height);
+
+  //Propagate a normal curved guide in both planes with 20 cm long pieces
+  sandCurvedGuide(length, 0.2f, opticalWidth, height, mval, radius);
+
+  //UnSqueeze the neutrons
+  sandUnSqueezeHorizontalBenderChannels(width, nChannels, waferThickness);
+  
+  
+}
+
+
 
 
 
@@ -3442,4 +3564,62 @@ void Sandman::sandDebugPosPos(float *h_pointsH, float *h_weightH, float *h_point
     checkCudaErrors(cudaMemcpy(h_weightV, d_weightVg, numElements * sizeof(float), cudaMemcpyDeviceToHost));
 }
 
+
+///Calculates which channel number (left to right) the neutron sits in, then
+///shifts all phase space to fit in a single version of that channel so that
+///the curved guide module can be used to do the transport for a multi-channel
+///bender.  Then the opposite function "unSqueeze..." reverses this process
+void Sandman::sandSqueezeHorizontalBenderChannels(const float width, const float numChannels, const float waferThickness)
+{
+  //Channel width in this case includes one wafer on the far side
+  float channelWidth = (width + waferThickness) / numChannels; //(this calc has last channel wafer inside the guide substrate mathematically)
+ 
+  //Device now computes
+  //relativeY = ypos[i] + width/2.0;
+  //channelNumber = roundf( relativeY / channelwidth );
+  //That is stored in tempArray
+  
+  //Then we adjust the position to be within a single channel of the right thickness for the OPTICS
+  //ypos[i] = ypos[i] + width/2.0f;
+  //ypos[i] = ypos[i] / channelNumber;
+  //ypos[i] = ypos[i] - 0.5f * (channelWidth-waferThickness);
+
+  int threadsPerBlock = SANDMAN_CUDA_THREADS;
+  int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
+  printf("CUDA kernel squeeze h bender with %d blocks of %d threads\n", blocksPerGrid,
+	 threadsPerBlock);
+
+
+  global_squeezeBenderChannel<<<blocksPerGrid, threadsPerBlock>>>
+    (d_pointsYH, d_tempArray, width, channelWidth, waferThickness, numElements);
+  
+  
+}
+
+
+///"Squeeze...() calculates which channel number (left to right) the neutron
+///sits in, then shifts all phase space to fit in a single version of that
+///channel so that the curved guide module can be used to do the transport for
+///a multi-channel bender.  This function "unSqueeze..." reverses this process
+///after the bender has been done
+void Sandman::sandUnSqueezeHorizontalBenderChannels(const float width, const float numChannels, const float waferThickness)
+{
+  //Channel width in this case includes one wafer on the far side
+  float channelWidth = (width + waferThickness) / numChannels; //(this calc has last channel wafer inside the guide substrate mathematically)
+  
+  //Device reverses the position adjustment of sandSqueeze...
+  //ypos[i] = ypos[i] + 0.5f * (channelWidth - waferThickness);
+  //ypos[i] = ypos[i] * channelNumber;
+  //ypos[i] = ypos[i] - width/2.0f;
+
+  int threadsPerBlock = SANDMAN_CUDA_THREADS;
+  int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
+  printf("CUDA kernel unsqueeze h bender with %d blocks of %d threads\n", blocksPerGrid,
+	 threadsPerBlock);
+
+
+  global_unSqueezeBenderChannel<<<blocksPerGrid, threadsPerBlock>>>
+    (d_pointsYH, d_tempArray, width, channelWidth, waferThickness, numElements);
+  
+}
 

@@ -36,6 +36,10 @@ class Sandman {
 
 
   //Temporary storage and variables for random numbers
+  float *d_tempArray=NULL;     /// Pointer to GPU memory for (e.g.)
+				    /// bender channel number
+
+
   float *d_r1g=NULL;          ///< Pointer to GPU memory for random number array buffer 1
   float *d_r2g=NULL;          ///< Pointer to GPU memory for random number array buffer 2
   curandGenerator_t prngGPU;  ///< Random number generator object on GPU
@@ -103,6 +107,16 @@ class Sandman {
 		       const float mval,
 		       const float radius
 		       );
+
+void sandHorizontalBender(
+				   const float length,
+				   const float width,
+				   const float height,
+				   const int numChannels,
+				   const float waferThickness,
+				   const float radius,
+				   const float mval
+				   );
 
   void sandILLHCSModerator(void);
 
@@ -216,7 +230,9 @@ void sandApertureCUDA(const float window_width, const float window_height);
   void sandGetPhaseSpaceH(float *h_pointsY, float *h_pointsTheta, float *h_weight);
   void sandGetPhaseSpaceV(float *h_pointsY, float *h_pointsTheta, float *h_weight);
   void sandDebugPosPos(float *h_pointsH, float *h_weightH, float *h_pointsV, float *h_weightV);
-  
+
+  void sandSqueezeHorizontalBenderChannels(const float width, const float numChannels, const float waferThickness);
+  void sandUnSqueezeHorizontalBenderChannels(const float width, const float numChannels, const float waferThickness);
 };
 
 #endif
