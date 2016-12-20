@@ -4,7 +4,7 @@
 #ifndef H_SANDMAN
 #define H_SANDMAN
 
-// #Constants - I actually don't like this at all.  TODO - put them into the class
+
 
 
 #define SANDMAN_CUDA_THREADS 256
@@ -34,6 +34,17 @@ class Sandman {
   float *d_weightVg=NULL;     /// Pointer to GPU memory for vertical
 			      ///statistical weight
 
+  //snapshots of the phase space for later processing on beam monitors
+  float *d_pointsThetaHsnapshot = NULL;
+  float *d_pointsYHsnapshot = NULL;
+  float *d_pointsThetaVsnapshot = NULL;
+  float *d_pointsYVsnapshot = NULL;
+
+  float yminSnapshot, ymaxSnapshot;
+  float thetaMinSnapshot, thetaMaxSnapshot;
+  char filenameSnapshot[256];
+  
+
 
   //Temporary storage and variables for random numbers
   float *d_tempArray=NULL;     /// Pointer to GPU memory for (e.g.)
@@ -55,12 +66,12 @@ class Sandman {
   
   //Monitor arrays used as temporary storage and flags to be filled by
   //destructor
-  float *d_lambdaMonHist=NULL; ///< Pointer to GPU memory for wavelength beam
-			       ///< monitor histogram
+  float *d_lambdaMonHist=NULL; ///< Pointer to GPU memory for wavelength beam monitor histogram
   std::string lambdaFileName;  ///< File name of wavelength beam monitor histogram
   float lambdaMin;             ///< Minimum wavelength in wavelength histogram
   float lambdaMax;             ///< Maximum wavelength in wavelength histogram
   int lambdaHistSize;          ///< Number of elements in wavelength histogram array (max 100)
+
 
   
   float flux;
@@ -219,6 +230,7 @@ void sandApertureCUDA(const float window_width, const float window_height);
   void zeroHistogram2D(void);
 
   void executeLambdaMonitor(void);
+  void executePhaseSpaceMapH(void);
   
   float arrayMinimum(const float *array, float *result);
   float arrayMaximum(const float *array, float *result);

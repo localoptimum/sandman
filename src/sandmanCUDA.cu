@@ -78,11 +78,16 @@
 
 #define DEBUG 1
 
-const float thetaCritNickel=0.099138;
-const float thetaCritStandardLambda = 1.0;
+const float thetaCritNickel=0.099138f;
+//#define NICKEL_REFLECTIVITY 0.98f-0.01288f
+//#define NICKEL_REFLECTIVITY 0.96712
+#define NICKEL_REFLECTIVITY 0.967f
+
+
+const float thetaCritStandardLambda = 1.0f;
 const int maxElements = 10000000;
-const float deadWeight = 0.01;
-const float PI_FLOAT = 3.1415927;
+const float deadWeight = 0.01f;
+const float PI_FLOAT = 3.1415927f;
 //const float nickelReflectivity = 0.98;
 //const float criticalReflectivity = 0.75;
 
@@ -487,6 +492,26 @@ static void global_unSqueezeBenderChannel(float *ypos, const float *channelNumbe
 
 
 
+__global__
+static void global_copyArray(const float *source, float *destination, const int numElements, const bool invert)
+{
+  // Copies the values from one array to another
+  
+  int i = blockIdx.x*blockDim.x + threadIdx.x;
+
+  //These nested conditionals do not cause branching problems because all
+  //threads evaluate the same path
+  if(i<numElements)
+    {
+      if(invert)
+	destination[i] = -source[i];
+      else
+	destination[i] = source[i];
+    }
+}
+
+
+
 
 
 
@@ -551,20 +576,22 @@ static void global_sandILLHCSModerator(float *d_modFluxH, float *d_weightH, cons
 
   int i = blockIdx.x*blockDim.x + threadIdx.x;
 
-  //The sample module assigns the scaling factor related to solid angle, now we do moderator brightness
-  if(d_modFluxH[i] < 10.0f)
+  if(i < numElements)
     {
-      //That check means we did not already calculate the flux, so we need to do it now:
-      d_modFluxH[i] = d_modFluxH[i] * illHCS(d_lambdag[i]);
+      //The sample module assigns the scaling factor related to solid angle, now we do moderator brightness
+      if(d_modFluxH[i] < 10.0f)
+	{
+	  //That check means we did not already calculate the flux, so we need to do it now:
+	  d_modFluxH[i] = d_modFluxH[i] * illHCS(d_lambdag[i]);
+	}
+      //Modify the weight if the neutron misses For one moderator, it is an easy
+      //window For multiple moderators, we need to set the weight to the initial
+      //value, then add multiples of that to an initially zeroed accumulator
+      if(d_pointsYH[i] > ymax || d_pointsYH[i] < ymin)
+	{
+	  d_weightH[i] = 0.0;
+	}
     }
-  //Modify the weight if the neutron misses For one moderator, it is an easy
-  //window For multiple moderators, we need to set the weight to the initial
-  //value, then add multiples of that to an initially zeroed accumulator
-  if(d_pointsYH[i] > ymax || d_pointsYH[i] < ymin)
-    {
-      d_weightH[i] = 0.0;
-    }
-
 }
 
 
@@ -789,7 +816,7 @@ __host__ __device__
 inline float device_criticalReflectivity(float mValue)
 {
 	//Data taken from swiss neutronics.  approximates the correct m value using a quadratic fit to their data
-	return(-0.01288*mValue*mValue+0.98);
+	return(-0.01288f*mValue*mValue+0.98f);
 }
 
 
@@ -806,18 +833,18 @@ inline float device_critical_theta(const double wavln, /**< Wavelength of incide
 
 
 __host__ __device__
-float device_reflectivity(const float theta_rads,	/**< Angle of incidence in radians. */
+float device_reflectivity_slow(const float theta_rads,	/**< Angle of incidence in radians. */
 		    const float lambda, const float mValue)		/**< m value of reflecting surface. */
 {
 	
 
 	//m=1 critical angle
-	const float thetaCritM1 = device_critical_theta(lambda, 1.0);
+	const float thetaCritM1 = device_critical_theta(lambda, 1.0f);
 	
 	//general critical angle
 	const float thetaCrit = device_critical_theta(lambda, mValue);
 	
-	const float dist = fabs(theta_rads);
+	const float dist = fabsf(theta_rads);
 	
 	float attn0;
 	float attnGrad;
@@ -825,21 +852,56 @@ float device_reflectivity(const float theta_rads,	/**< Angle of incidence in rad
 	
 	if(dist <= thetaCritM1)
 	{
-		//Flat at low angles below m=1
-		ans = device_criticalReflectivity(1.0);
-	}	
+	  //Flat at low angles below m=1
+	  ans = device_criticalReflectivity(1.0);
+       	}	
 	else if(dist <= thetaCrit)
 	{
-		//linear decay to the knee value above m=1
-		attnGrad = (device_criticalReflectivity(mValue) - device_criticalReflectivity(1.0)) / (thetaCrit - thetaCritM1);
-		attn0    = device_criticalReflectivity(1.0) - attnGrad*thetaCritM1;
-		
-		ans = attn0 + attnGrad * dist;
+	  //linear decay to the knee value above m=1
+	  attnGrad = (device_criticalReflectivity(mValue) - device_criticalReflectivity(1.0)) / (thetaCrit - thetaCritM1);
+	  attn0    = device_criticalReflectivity(1.0) - attnGrad*thetaCritM1;
+	  	
+	  ans = attn0 + attnGrad * dist;
 	}
 	else
-	{
-		ans = 0.0;
-	}
+	  {
+	    ans = 0.0f;
+	  }
+	
+	return(ans);
+}
+
+
+__device__
+float device_reflectivity(const float theta_rads,	/**< Angle of incidence in radians. */
+		    const float lambda, const float mValue)		/**< m value of reflecting surface. */
+{
+	
+
+	//m=1 critical angle
+	const float thetaCritM1 = device_critical_theta(lambda, 1.0f);
+	
+	//general critical angle
+	const float thetaCrit = device_critical_theta(lambda, mValue);
+	
+	const float dist = fabsf(theta_rads);
+	
+	float attn0;
+	float attnGrad;
+	float ans=NICKEL_REFLECTIVITY;
+
+	if(dist > thetaCritM1)
+	  {
+	    attnGrad=(device_criticalReflectivity(mValue) - NICKEL_REFLECTIVITY) / (thetaCrit - thetaCritM1);
+	    attn0    = NICKEL_REFLECTIVITY - attnGrad*thetaCritM1;
+	    ans = attn0 + attnGrad * dist;
+	  }
+
+	//Multiply by low pass above thetaCrit
+	if(dist > thetaCrit)
+	  {
+	    ans = 0.0f;
+	  }
 	
 	return(ans);
 }
@@ -851,7 +913,7 @@ static float device_attenuate_alpha(const float valpha, const float lambda, cons
 {
 //Attenuates the opacity of a vertex based on its divergence angle
 
-return (valpha * device_reflectivity(theta, lambda, mValue));
+  return (valpha * device_reflectivity(theta, lambda, mValue));
 }
 
 
@@ -974,6 +1036,8 @@ static void global_arrayMinimum(const float *array, float globalMin[1], const in
   //Each thread checks it's value against the shared minimum, and overwrites it if necessary
   if(i < numElements)
     {
+      //This has to be handled correctly, otherwise there is a race condition
+      //at this point - the if statement is not synchronised and it overwrites
       if(array[i] < sharedMin)
 	atomicExch(&sharedMin, array[i]);      
     }
@@ -1025,9 +1089,12 @@ static void global_arrayMaximum(const float *array, float globalMax[1], const in
   
   __syncthreads();
   
-  //All threads check their value against the shared maximum, and overwrite it if necessary
+
   if(i < numElements)
     {
+        //This has to be handled correctly, otherwise there is a race condition
+      //at this point - the if statement is not synchronised and it overwrites
+      
       if(array[i] > sharedMax)
 	atomicExch(&sharedMax, array[i]);      
     }
@@ -1170,32 +1237,30 @@ static void global_sandReflection(float *d_pointsY, float *d_pointsTheta, const 
 	      /* Reflect in the upper plane? */
 	      if(d_pointsY[i] > mirrorYtop)
 		{
-		  /* reflection in theta: first attenuate then reflect */
-		  //d_weight[i] = device_attenuate_alpha(d_weight[i], d_lambda[i], fabs(d_pointsTheta[i] - mirrorAngleTop), mTop);
-		  //d_weight[i] = device_attenuate_alpha(d_weight[i], d_lambda[i], fdimf(d_pointsTheta[i], mirrorAngleTop), mTop);
-		  d_weight[i] = device_attenuate_alpha(d_weight[i], d_lambda[i], fabsf(d_pointsTheta[i] - mirrorAngleTop), mTop);
-		  d_pointsTheta[i] = 2.0*mirrorAngleTop - d_pointsTheta[i];
-		  
-		  /* reflection in Y */
-		  /* pointsY[i] = mirrorY - (pointsY[i] - mirrorY); */
-		  d_pointsY[i] = 2.0*mirrorYtop - d_pointsY[i];
-		  finished=false;
+		  mval = mTop;
+		  mirrorAngle = mirrorAngleTop;
+		  mirrorY = mirrorYtop;
+		  finished = false;
 		}
 	      
 	      /* Are we in the lower plane? */
 	      if(d_pointsY[i] < mirrorYbottom)
 		{
-		  
-		  /* reflection in theta: first attenuate then reflect */
-		  //d_weight[i] = device_attenuate_alpha(d_weight[i], d_lambda[i], fabs(d_pointsTheta[i] - mirrorAngleBottom), mBottom);
-		  //d_weight[i] = device_attenuate_alpha(d_weight[i], d_lambda[i], fdimf(d_pointsTheta[i], mirrorAngleBottom), mBottom);
-		  d_weight[i] = device_attenuate_alpha(d_weight[i], d_lambda[i], fabsf(d_pointsTheta[i] - mirrorAngleBottom), mBottom);
-		  d_pointsTheta[i] = 2.0*mirrorAngleBottom - d_pointsTheta[i];
+		  mval = mBottom;
+		  mirrorAngle = mirrorAngleBottom;
+		  mirrorY = mirrorYbottom;
+		  finished = false;
+		}
+
+	      /* Do we need to do slow work? */
+	      if(finished == false)
+		{
+		  d_weight[i] = device_attenuate_alpha(d_weight[i], d_lambda[i], fabsf(d_pointsTheta[i] - mirrorAngle), mval);
+		  d_pointsTheta[i] = 2.0*mirrorAngle - d_pointsTheta[i];
 		  
 		  /* reflection in Y */
 		  /* pointsY[i] = mirrorY - (pointsY[i] - mirrorY); */
-		  d_pointsY[i] = 2.0*mirrorYbottom - d_pointsY[i];
-		  finished=false;
+		  d_pointsY[i] = 2.0*mirrorY - d_pointsY[i];
 		}
 	    }
 	  while (finished == false);
@@ -1371,6 +1436,13 @@ Sandman::~Sandman(void)
       executeLambdaMonitor();
     }
 
+  if(d_pointsThetaHsnapshot != NULL && d_pointsYHsnapshot != NULL)
+    {
+      executePhaseSpaceMapH();
+
+      checkCudaErrors(cudaFree(d_pointsThetaHsnapshot));
+      checkCudaErrors(cudaFree(d_pointsYHsnapshot));
+    }
 
 
    std::cout << "  Freeing up device memory" << std::endl;
@@ -1846,21 +1918,75 @@ void Sandman::sandPosMonitorH(const std::string filename, const float min, const
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 void Sandman::phaseSpaceMapH(const char *filename, const float ymin, const float ymax, const float thetaMin, const float thetaMax)
+{
+  //Create snapshots  
+  strcpy(filenameSnapshot, filename);
+  yminSnapshot = ymin;
+  ymaxSnapshot = ymax;
+  thetaMinSnapshot = thetaMin;
+  thetaMaxSnapshot = thetaMax;
+  
+  
+  if( d_pointsThetaHsnapshot != NULL ||
+      d_pointsYHsnapshot != NULL )
+    {
+      std::cout << "ERROR: only one type of beam monitor snapshot can be created" << std::endl;
+      exit(1);
+    }
+  
+  checkCudaErrors(cudaMalloc((void **)&d_pointsThetaHsnapshot, numElements*sizeof(float)));
+  
+  if(d_pointsThetaHsnapshot == NULL)
+    {
+      std::cerr << "ERROR: failed to allocate device memory in setupPhaseSpaceMapH for theta" << std::endl;
+      exit(1);
+    }
+  
+  checkCudaErrors(cudaMalloc((void **)&d_pointsYHsnapshot, numElements*sizeof(float)));
+  
+  if(d_pointsYHsnapshot == NULL)
+    {
+      std::cerr << "ERROR: failed to allocate device memory in setupPhaseSpaceMapH for Y" << std::endl;
+      exit(1);
+    }
+
+  if(d_pointsYH == NULL || d_pointsThetaH == NULL)
+    {
+      std::cerr << "OMG: Copying from unallocated array" << std::endl;
+      exit(1);
+    }
+
+  //If we get here, then the memory was allocated just fine.
+  
+  int threadsPerBlock = SANDMAN_CUDA_THREADS;
+  int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
+  std::cout << "CUDA kernel copyArray for phaseSpaceMapH with " << blocksPerGrid << " blocks of " << threadsPerBlock << " threads" << std::endl;
+ 
+
+  //Snapshot negative theta
+  global_copyArray<<<blocksPerGrid, threadsPerBlock>>>
+    (d_pointsThetaH, d_pointsThetaHsnapshot, numElements, true);
+
+
+  //Snapshot positive Y
+  global_copyArray<<<blocksPerGrid, threadsPerBlock>>>
+    (d_pointsYH, d_pointsYHsnapshot, numElements, false);
+  
+}
+
+
+
+
+
+
+
+
+
+
+
+
+void Sandman::executePhaseSpaceMapH(void)
 {
   ///
   /// Computes a full phase space map in the horizontal plane
@@ -1876,16 +2002,14 @@ void Sandman::phaseSpaceMapH(const char *filename, const float ymin, const float
   ///
   /// @param thetaMax the maximum divergence value to use (radians)
   ///
-  /// \todo Make this function run at the end, like the lambdahistrogram function
-  ///
   
   float *h_histogram=NULL;
   float *d_boundary=NULL;
   
-  float runningY = ymin;
-  float runningTheta = thetaMin;
-  float dy = fabs(ymax-ymin)/100.0f;
-  float dtheta = fabs(thetaMax - thetaMin)/100.0f;
+  float runningY = yminSnapshot;
+  float runningTheta = thetaMinSnapshot;
+  float dy = fabs(ymaxSnapshot-yminSnapshot)/100.0f;
+  float dtheta = fabs(thetaMaxSnapshot - thetaMinSnapshot)/100.0f;
   
   
   
@@ -1911,7 +2035,7 @@ void Sandman::phaseSpaceMapH(const char *filename, const float ymin, const float
   
   
   
-  // Zero the count histogram
+   // Zero the count histogram
   zeroHistogram2D();
   
   
@@ -1938,7 +2062,7 @@ void Sandman::phaseSpaceMapH(const char *filename, const float ymin, const float
   //void global_rebinnedPhaseSpaceH(float globalHist[100][100], const float *d_pointsY, const float *d_pointsTheta, const float yMin, const float dy, const float thetaMin, const float dtheta, int histSize, const float *d_weight, const int numElements)
   
   global_rebinnedPhaseSpaceH<<<blocksPerGrid, threadsPerBlock>>>
-    ((float (*)[100])d_histogram2D, d_pointsYH, d_pointsThetaH, ymin, dy, thetaMin, dtheta, 100, d_weightHg, numElements);
+    ((float (*)[100])d_histogram2D, d_pointsYHsnapshot, d_pointsThetaHsnapshot, yminSnapshot, dy, thetaMinSnapshot, dtheta, 100, d_weightHg, numElements);
   
   
 #ifdef DEBUG
@@ -1960,23 +2084,23 @@ void Sandman::phaseSpaceMapH(const char *filename, const float ymin, const float
   
   
   
-  dataFile.open(filename);
+  dataFile.open(filenameSnapshot);
   
   if(!dataFile.good())
     {
-      std::cerr << "ERROR opening " << filename << " for writing" << std::endl;
+      std::cerr << "ERROR opening " << filenameSnapshot << " for writing" << std::endl;
       return;
     }
   else
-    std::cout << "Writing 2D monitor file " << filename << std::endl;
+    std::cout << "Writing 2D monitor file " << filenameSnapshot << std::endl;
   
   
   for(i=0; i<100; i++)
     {
       for(j=0; j<100; j++)
 	{
-	  runningTheta = thetaMin + dtheta * (float) j;
-	  runningY = ymin + dy * (float) i;
+	  runningTheta = thetaMinSnapshot + dtheta * (float) j;
+	  runningY = yminSnapshot + dy * (float) i;
 	  //[theta][y]
 	  dataFile << runningTheta << " " << runningY << "  " << h_histogram[j*100+i] << std::endl;
 	}
@@ -1989,6 +2113,12 @@ void Sandman::phaseSpaceMapH(const char *filename, const float ymin, const float
   if(d_boundary != NULL)
     checkCudaErrors(cudaFree(d_boundary));
 }
+
+
+
+
+
+
 
 
 
@@ -3136,6 +3266,8 @@ void Sandman::sandHorizontalBender(
       std::cerr << "ERROR: optical width is less than 1 mm in horizontal bender module (value is " << opticalWidth << ")" << std::endl;
       exit(1);
     }
+
+  std::cout << nChannels << " channel bender " << width << " wide and of length " << length << " from wafers of thickness " << waferThickness << std::endl;
 
   //First squeeze the neutrons into the channel
   sandSqueezeHorizontalBenderChannels(width, nChannels, waferThickness);
