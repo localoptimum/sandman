@@ -133,6 +133,11 @@ static inline float square2circleFlux(const float num)
 
 
 
+/// This function appears stupid, but there is a reason: the conic section
+/// functions were generated using mathematica, and exporting to C, then
+/// ported to JAVA as part of JNADS, and now they appear here!  However,
+/// rather than start from scratch, I just implement similar functions that
+/// will be fast in CUDA to save time.
 __host__ __device__
 static inline float fastPow2(float arg)
 {
@@ -141,28 +146,157 @@ static inline float fastPow2(float arg)
 
 
 
-// __host__ __device__
-// static float elliptic_opening_curve(float xpos, float length, float fp1, float fp2, float outWidth) {
-//         //An ellipse where the entrance width is specified Code translated
-//         //directly from mathematica using CForm to avoid time expensive bugs
+__host__ __device__
+static float elliptic_opening_curve(float xpos, float length, float fp1, float fp2, float outWidth) 
+{
+  //An ellipse where the entrance width is specified Code translated
+  //directly from mathematica using CForm to avoid time expensive bugs
+  
+  float x0;
+  
+  x0 = (8.0f*fp1 + 8.0f*fp2 - 4.0f*sqrtf(2.0f)*sqrtf(2.0f*fastPow2(fp1) +
+						     2.0f*fastPow2(fp2) - 4.0f*fp1*length - 4.0f*fp2*length +
+						     4.0f*fastPow2(length) + fastPow2(outWidth) +
+						     sqrtf((4.0f*fastPow2(fp1) - 8.0f*fp1*length + 4.0f*fastPow2(length) +
+							    fastPow2(outWidth))*(4.0f*fastPow2(fp2) - 8.0f*fp2*length +
+										 4.0f*fastPow2(length) + fastPow2(outWidth)))))/16.0f;
+  
+  return(
+	 sqrtf((4.0f*(fp1 - x0)*(fp2 - x0)*(-x0 + xpos))/(fp1 + fp2 - 2.0f*x0) -
+	       (1.0f - fastPow2(fp1 - fp2)/fastPow2(fp1 + fp2 - 2.0f*x0))*fastPow2(-x0
+										   + xpos))
+	 );
+}
 
-//         float x0;
-	
-// 	x0 = (8*fp1 + 8*fp2 - 4.0f*sqrt(2)*Math.sqrt(2*fastPow2(fp1) +
-// 						     2*fastPow2(fp2) - 4*fp1*length - 4*fp2*length +
-// 						     4*fastPow2(length) + fastPow2(outWidth) +
-// 						     Math.sqrt((4*fastPow2(fp1) - 8*fp1*length + 4*fastPow2(length) +
-// 								fastPow2(outWidth))*(4*fastPow2(fp2) - 8*fp2*length +
-// 										     4*fastPow2(length) + fastPow2(outWidth)))))/16.0;
-	
-//         return(
-// 	       sqrt((4*(fp1 - x0)*(fp2 - x0)*(-x0 + xpos))/(fp1 + fp2 - 2*x0) -
-// 			 (1 - fastPow2(fp1 - fp2)/fastPow2(fp1 + fp2 - 2*x0))*fastPow2(-x0
-// 										       + xpos))
-//                 );
-	
 
-//     }
+
+__host__ __device__
+static float elliptic_closing_curve(float xpos, float fp1, float fp2, float inWidth) 
+{
+  //An ellipse where the exit width is specified
+  //Code translated directly from mathematica using CForm to avoid bugs
+  
+  float x0;
+  
+  x0 = (8.0f*fp1 + 8.0f*fp2 - 4.0f*sqrtf(2.0f)*sqrtf(2.0f*fastPow2(fp1) + 
+						     2.0f*fastPow2(fp2) + fastPow2(inWidth) + 
+						     sqrtf((4.0f*fastPow2(fp1) + 
+							    fastPow2(inWidth))*(4.0f*fastPow2(fp2) + fastPow2(inWidth)))))/16.0f;
+  
+  return(
+	 sqrtf((4.0f*(fp1 - x0)*(fp2 - x0)*(-x0 + xpos))/(fp1 + fp2 - 2.0f*x0) -
+	       (1.0f - fastPow2(fp1 - fp2)/fastPow2(fp1 + fp2 - 2*x0))*fastPow2(-x0
+										 + xpos))
+	 );
+}
+
+
+
+
+__host__ __device__
+static float parabolic_closing_curve(float xpos, float foc, float inw) 
+{
+  float x0;
+  float ans;
+  
+  x0 = (2.0f * foc + sqrtf(4.0f * foc * foc + inw * inw)) / 4.0f;
+  
+  ans = 2.0f * sqrtf((foc - x0) * (xpos - x0));
+  
+  return (ans);
+}
+
+
+__host__ __device__
+static float parabolic_opening_curve(float xpos, float len, float foc, float outw) 
+{
+  float x0;
+  float ans;
+  
+  x0 = (2.0f*foc + 2.0f*len -
+	sqrtf(4.0f*fastPow2(foc) -
+		  8.0f*foc*len + 4.0f*fastPow2(len) +
+		  fastPow2(outw)))/4.0f;
+  
+  ans = 2.0f*sqrtf((foc - x0)*(-x0 + xpos));
+  
+  return (ans);
+}
+
+
+
+__host__ __device__
+static float hyperbolic_opening_curve(float xpos, float len, float foc1, float foc2, float outw) 
+{
+  float x0;
+  float ans;
+  
+  if(foc2 < foc1) {
+    printf("WARNING: hyperbolic curve with f2 < f1 may be badly defined");
+  }
+  
+  x0 = (8.0f*foc1 + 8.0f*foc2 -
+	4.0f*sqrtf(2.0f)*
+	sqrtf(2.0f*fastPow2(foc1) +
+		  2.0f*fastPow2(foc2) -
+		  4.0f*foc1*len - 4.0f*foc2*len +
+		  4.0f*fastPow2(len) +
+		  fastPow2(outw) -
+		  sqrtf((4.0f*fastPow2(foc1) -
+			     8.0f*foc1*len +
+			     4.0f*fastPow2(len) +
+			     fastPow2(outw))*
+			    (4.0f*fastPow2(foc2) -
+			     8.0f*foc2*len +
+			     4.0f*fastPow2(len) +
+			     fastPow2(outw)))))/16.0f;
+  
+  ans = sqrtf((4.0f*(foc1 - x0)*(foc2 - x0)*
+		   (-x0 + xpos))/
+		  (foc1 + foc2 - 2.0f*x0) -
+		  (1.0f - fastPow2(foc1 - foc2)/
+		   fastPow2(foc1 + foc2 - 2.0f*x0))
+		  *fastPow2(-x0 + xpos));
+  
+  return(ans);
+}
+
+
+__host__ __device__
+static float hyperbolic_closing_curve(float xpos, float foc1, float foc2, float inw) {
+  float x0;
+  float ans;
+  
+  if(foc2 < foc1) {
+    printf("WARNING: hyperbolic curve with f2 < f1 may be badly defined");
+  }
+  
+  x0 = (8.0f*foc1 + 8.0f*foc2 -
+	4.0f*sqrtf(2.0f)*
+	sqrtf(2.0f*fastPow2(foc1) + 
+		  2.0f*fastPow2(foc2) +
+		  fastPow2(inw) -
+		  sqrtf((4.0f*fastPow2(foc1) +
+			     fastPow2(inw))*
+			    (4.0f*fastPow2(foc2) +
+			     fastPow2(inw)))))/16.0f;
+  
+  ans = sqrtf((4.0f*(foc1 - x0)*(foc2 - x0)*
+		   (-x0 + xpos))/
+		  (foc1 + foc2 - 2.0f*x0) -
+		  (1.0f - fastPow2(foc1 - foc2)/
+		   fastPow2(foc1 + foc2 - 2.0f*x0))
+		  *fastPow2(-x0 + xpos));
+  
+  return(ans);
+}
+
+
+
+
+
+
+
 
 
 
@@ -703,7 +837,7 @@ static void global_sandZeroHistogram2D(float d_histogram[100][100])
 
 
 __global__
-static void global_sandSkewCUDA(float *d_pointsY, const float *d_pointsTheta, const double distance_m, const int numElements)
+static void global_sandSkewCUDA(float *d_pointsY, const float *d_pointsTheta, const float distance_m, const int numElements)
 { 
   int i = blockIdx.x*blockDim.x + threadIdx.x;
 
@@ -827,8 +961,8 @@ inline float device_criticalReflectivity(float mValue)
 
 
 __host__ __device__
-inline float device_critical_theta(const double wavln, /**< Wavelength of incident neutrons. */
-					  const double mValue)/**< m value of the surface. */
+inline float device_critical_theta(const float wavln, /**< Wavelength of incident neutrons. */
+					  const float mValue)/**< m value of the surface. */
 {
 	float ans;
 	ans = wavln * mValue / thetaCritStandardLambda;
