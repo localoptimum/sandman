@@ -59,10 +59,16 @@
 ///   from there.  It's also orders of magnitude quicker in most cases to work
 ///   like this.  To handle this reverse tracing method, sandman's beam
 ///   monitors and calculations have been specially written in a way to
-///   provide correct and accurate results.  Nonetheless, there is nothing in
-///   the code that prevents you from doing a "stupid" simulation.  Just
-///   define a sample with sandman that is the same size as the moderator, and
-///   a sandman moderator that is the same size as the instrument sample.
+///   provide correct and accurate results.  For example, the beam monitor
+///   functions store a copy of the position of the neutrons, and mirror the
+///   divergence; then at the end of the calculation the statistical weight is
+///   calculated, so that the beam profile at that position matches the result
+///   that VITESS or MCSTAS would give you when simulating forwards.
+///   Nonetheless, there is nothing in the code that prevents you from doing a
+///   forwards simulation.  Just define a sample with sandman that is the same
+///   size as the moderator, and a sandman moderator that is the same size as
+///   the instrument sample, and set the mirror image parameter in the
+///   relevant monitor functions to "false".
 ///
 //////////////////////////////////////////////////////////////////////////////////
 
