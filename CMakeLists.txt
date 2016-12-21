@@ -19,7 +19,12 @@ LIST(APPEND SOURCES "src/sandmanCUDA.cu")
 LIST(APPEND HEADERS "include/sandmanCUDA.h")
 
 #Build options for CUDA
+#This is for deploy:
 LIST(APPEND CMAKE_CXX_FLAGS "-std=c++0x -O3 -ffast-math -Wall")
+#This is for debug:
+#LIST(APPEND CMAKE_CXX_FLAGS "-std=c++0x --debug -Wall")
+
+#...and the rest...
 LIST(APPEND CUDA_NVCC_FLAGS "-std=c++11")
 LIST(APPEND CUDA_NVCC_FLAGS --compiler-options -fno-strict-aliasing -lineinfo -use_fast_math -Xptxas -dlcm=cg)
 LIST(APPEND CUDA_NVCC_FLAGS -gencode arch=compute_20,code=sm_20)
