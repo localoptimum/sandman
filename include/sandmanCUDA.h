@@ -44,7 +44,7 @@ class Sandman {
   float thetaMinSnapshot, thetaMaxSnapshot;
   char filenameSnapshot[256];
   
-
+  float sourceDeltaLambda = 1.0f;
 
   //Temporary storage and variables for random numbers
   float *d_tempArray=NULL;     /// Pointer to GPU memory for (e.g.)
@@ -80,36 +80,36 @@ class Sandman {
   float traj;
   float eTraj;
 
-  Sandman();
-  Sandman(const int nE);
+  Sandman(const bool& verbose=false);
+  Sandman(const int nE, const bool&verbose=false);
   ~Sandman();
 
   void generateBothRandomArrays(void);
   void generateOneRandomArray(void);
 
 
-  void sample(const float width, const float height, const float win_width, const float win_height, const float hoffset, const float voffset, const float win_dist, const float lambdaMin, const float lambdaMax);
+  void sample(const float width, const float height, const float win_width, const float win_height, const float hoffset, const float voffset, const float win_dist, const float lambdaMin, const float lambdaMax, const std::string& monitorNameStem=std::string());
 
   void sandGuideElementCUDA(
-			  const float length, 
-			  const float entr_width, 
-			  const float exit_width, 
-			  const float exit_offset_h, 
-			  const float mLeft, 
-			  const float mRight, 
-			  const float entr_height,
-			  const float exit_height,
-			  const float exit_offset_v,
-			  const float mTop,
-			  const float mBottom
+			    const float length, 
+			    const float entr_width, 
+			    const float exit_width, 
+			    const float exit_offset_h, 
+			    const float mLeft, 
+			    const float mRight, 
+			    const float entr_height,
+			    const float exit_height,
+			    const float exit_offset_v,
+			    const float mTop,
+			    const float mBottom
 			    );
-
+  
   void sandSimpleStraightGuide(
-		       const float length,
-		       const float width,
-		       const float height,
-		       const float mval);
-
+			       const float length,
+			       const float width,
+			       const float height,
+			       const float mval);
+  
   void sandCurvedGuide(
 		       const float length,
 		       const float sectionLength,
@@ -118,17 +118,42 @@ class Sandman {
 		       const float mval,
 		       const float radius
 		       );
+  
+  void sandHorizontalBender(
+			    const float length,
+			    const float width,
+			    const float height,
+			    const int numChannels,
+			    const float waferThickness,
+			    const float radius,
+			    const float mval
+			    );
 
-void sandHorizontalBender(
-				   const float length,
-				   const float width,
-				   const float height,
-				   const int numChannels,
-				   const float waferThickness,
-				   const float radius,
-				   const float mval
-				   );
+  void ellipticOpeningGuide(
+			    const float length, 
+			    const float exit_width, 
+			    const float exit_height, 
+			    const float focalPoint1H, 
+			    const float focalPoint2H, 
+			    const float focalPoint1V, 
+			    const float focalPoint2V, 
+			    const float mNumber, 
+			    const int numSections
+			    );
 
+  void ellipticClosingGuide(
+			    const float length, 
+			    const float entr_width, 
+			    const float entr_height, 
+			    const float focalPoint1H, 
+			    const float focalPoint2H, 
+			    const float focalPoint1V, 
+			    const float focalPoint2V, 
+			    const float mNumber, 
+			    const int numSections
+			    );
+
+  
   void sandILLHCSModerator(void);
 
 
@@ -181,7 +206,7 @@ void sandHorizontalBender(
   void sandTranslationV(const float distanceV);
   void sandTranslationH(const float distanceH);
 
-  void sandFreeSpaceCUDA(const float distance);
+  void sandFreeSpaceCUDA(const float distance, const bool& verbose=true);
   void sandSkewCUDA(const float distance_m);
   void sandReflection(const float mirrorY1, const float mirrorY2, const float mirrorAngle1, const float mirrorAngle2, const float mValue);
 
@@ -205,7 +230,6 @@ void sandApertureCUDA(const float window_width, const float window_height);
   void phaseSpaceMapH(const char *filename, const float ymin, const float ymax, const float thetaMin, const float thetaMax);
   void phaseSpaceMapH(const char *filename);  // auto detects the boundaries for you
 
-  void report(void);
 
 
 
@@ -221,6 +245,8 @@ void sandApertureCUDA(const float window_width, const float window_height);
 
 
  private: 
+
+  bool showCUDAsteps;
   void displayWelcome(void);
  
 
@@ -245,6 +271,8 @@ void sandApertureCUDA(const float window_width, const float window_height);
 
   void sandSqueezeHorizontalBenderChannels(const float width, const float numChannels, const float waferThickness);
   void sandUnSqueezeHorizontalBenderChannels(const float width, const float numChannels, const float waferThickness);
+  
+  void report(void);
 };
 
 #endif
