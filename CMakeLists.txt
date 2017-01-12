@@ -27,9 +27,12 @@ LIST(APPEND CMAKE_CXX_FLAGS "-std=c++0x -O3 -ffast-math -Wall")
 #...and the rest...
 LIST(APPEND CUDA_NVCC_FLAGS "-std=c++11")
 LIST(APPEND CUDA_NVCC_FLAGS --compiler-options -fno-strict-aliasing -lineinfo -use_fast_math -Xptxas -dlcm=cg)
-LIST(APPEND CUDA_NVCC_FLAGS -gencode arch=compute_20,code=sm_20)
-LIST(APPEND CUDA_NVCC_FLAGS -gencode arch=compute_30,code=sm_30)
-LIST(APPEND CUDA_NVCC_FLAGS -gencode arch=compute_35,code=sm_35)
+#LIST(APPEND CUDA_NVCC_FLAGS -gencode arch=compute_30,code=sm_30)
+#LIST(APPEND CUDA_NVCC_FLAGS -gencode arch=compute_35,code=sm_35)
+#LIST(APPEND CUDA_NVCC_FLAGS -gencode arch=compute_50,code=sm_50)
+#LIST(APPEND CUDA_NVCC_FLAGS -gencode arch=compute_52,code=sm_52)
+#LIST(APPEND CUDA_NVCC_FLAGS -gencode arch=compute_53,code=sm_53)
+LIST(APPEND CUDA_NVCC_FLAGS -gencode arch=compute_61,code=sm_61)
 
 #The actual building and linking
 CUDA_ADD_LIBRARY(sandmanCUDA SHARED ${SOURCES})
