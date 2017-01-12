@@ -623,10 +623,13 @@ static void global_squeezeBenderChannel(float *ypos, float *channelNumber, const
   if(i<numElements)
     {
       relativeY = ypos[i] + width/2.0f;
-      //channelNumber[i] = roundf( relativeY / channelWidth );
-      channelNumber[i] = rintf( relativeY / channelWidth );
+      //The 'channelWidth' is defined as the empty space plus one
+      //wafer thickness
+      //Channel number starts at zero
+      channelNumber[i] = floorf( relativeY / channelWidth );
       
-      //Then we adjust the position to be within a single channel of the right thickness for the OPTICS
+      //Then we adjust the position to be within a single channel of
+      //the right thickness for the OPTICS
       ypos[i] = relativeY;
       ypos[i] = ypos[i] / (channelNumber[i]+1.0f);
       ypos[i] = ypos[i] - 0.5f * (channelWidth-waferThickness);
