@@ -610,15 +610,11 @@ static void global_countTrajectories(float *numNeutrons, const float *weightH, c
 
 
 
-
+///Compresses the beam into a single channel of the bender, to model a multi-channel bender by a single channel process (n channels would have n branches otherwise).
   
 __global__
 static void global_squeezeBenderChannel(float *ypos, float *channelNumber, const float width, const float channelWidth, const float waferThickness, const int numElements)
 {
-  // Calculates the total emitted neutron current represented by this
-  // trajectory, based on its interception with one moderator surace
-  // characterised by a single temperature temp, width width, positioned with
-  // an offset hoffset, and a brightness num
   
   int i = blockIdx.x*blockDim.x + threadIdx.x;
 
@@ -638,6 +634,9 @@ static void global_squeezeBenderChannel(float *ypos, float *channelNumber, const
 }
 
 
+///Reverses the compression of the beam into a single channel of the
+///bender, to model a multi-channel bender by a single channel process
+///(n channels would have n branches otherwise).
 __global__
 static void global_unSqueezeBenderChannel(float *ypos, const float *channelNumber, const float width, const float channelWidth, const float waferThickness, const int numElements)
 {
@@ -3713,16 +3712,10 @@ void Sandman::sandHorizontalBender(
   //First squeeze the neutrons into the channel
   sandSqueezeHorizontalBenderChannels(width, nChannels, waferThickness);
 
-  //Output horizontal phase space to see what is going on
-  //phaseSpaceMapHCPU("benderPhaseSpaceDebug.dat");
-
-  //Aperture is done inside curved guide module automatically
-  //sandApertureCUDA(opticalWidth, height);
-
-  //Propagate a normal curved guide in both planes with 20 cm long pieces
+  //Propagate a normal curved guide with 20 cm long pieces
   sandCurvedGuide(length, 0.2f, opticalWidth, height, mval, radius);
 
-  //UnSqueeze the neutrons
+  //UnSqueeze the neutrons out of the channel
   sandUnSqueezeHorizontalBenderChannels(width, nChannels, waferThickness);
   
   
@@ -4015,8 +4008,25 @@ void Sandman::generateRandomArray(float *array)
   /// Presents welcome message when called by constructor.
   ///
 
+  #ifdef DEBUG
+  cudaError_t errSync  = cudaGetLastError();
+  cudaError_t errAsync = cudaDeviceSynchronize();
+  if (errSync != cudaSuccess) 
+    std::cout << "Sync kernel error: " << cudaGetErrorString(errSync) << std::endl;
+  if (errAsync != cudaSuccess)
+    std::cout << "Async kernel error: " << cudaGetErrorString(errAsync) << std::endl;
+#endif
+  
+
   printf("\tGenerating random numbers on GPU\n");
   checkCudaErrors(curandGenerateUniform(prngGPU, (float *) array, numElements));
+
+#ifdef DEBUG
+  if (errSync != cudaSuccess) 
+    std::cout << "Sync kernel error: " << cudaGetErrorString(errSync) << std::endl;
+  if (errAsync != cudaSuccess)
+    std::cout << "Async kernel error: " << cudaGetErrorString(errAsync) << std::endl;
+#endif
 }
 
 
