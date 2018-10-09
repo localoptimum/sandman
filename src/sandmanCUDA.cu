@@ -1681,7 +1681,7 @@ void Sandman::sandCountNeutrons(void)
 
   if(showCUDAsteps)
     {
-      printf("CUDA kernel count neutrons with %d blocks of %d threads\n", blocksPerGrid,
+      printf("\tCUDA kernel count neutrons with %d blocks of %d threads\n", blocksPerGrid,
 	 threadsPerBlock);
     }
 
@@ -1778,7 +1778,7 @@ void Sandman::sandCountTrajectories(void)
   int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
 
   if(showCUDAsteps)
-    printf("CUDA kernel count neutrons with %d blocks of %d threads\n", blocksPerGrid,
+    printf("\tCUDA kernel count neutrons with %d blocks of %d threads\n", blocksPerGrid,
 	   threadsPerBlock);
 
 
@@ -1934,7 +1934,7 @@ void Sandman::executeLambdaMonitor(void)
   int threadsPerBlock = SANDMAN_CUDA_THREADS;
   int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
   if(showCUDAsteps)
-    std::cout << "CUDA kernel lambdamonitor[" << lambdaHistSize << "] with " << blocksPerGrid << " blocks of " << threadsPerBlock << " threads" << std::endl;
+    std::cout << "\tCUDA kernel lambdamonitor[" << lambdaHistSize << "] with " << blocksPerGrid << " blocks of " << threadsPerBlock << " threads" << std::endl;
 
   //void global_lambdaMonitor(float *lambdaHist, const float lambdaMin, const float dLambda, int histSize, const float *lambdaH, const float *lambdaV, const float *weightH, const float *weightV, const int numElements)
 
@@ -2090,7 +2090,7 @@ void Sandman::phaseSpaceMapH(const char *filename, const float ymin, const float
   int threadsPerBlock = SANDMAN_CUDA_THREADS;
   int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
   if(showCUDAsteps)
-    std::cout << "CUDA kernel copyArray for phaseSpaceMapH with " << blocksPerGrid << " blocks of " << threadsPerBlock << " threads" << std::endl;
+    std::cout << "\tCUDA kernel copyArray for phaseSpaceMapH with " << blocksPerGrid << " blocks of " << threadsPerBlock << " threads" << std::endl;
  
 
   //Snapshot negative theta
@@ -2180,7 +2180,7 @@ void Sandman::executePhaseSpaceMapH(void)
   
   int threadsPerBlock = SANDMAN_CUDA_THREADS;
   int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
-  std::cout << "CUDA kernel rebinnedPhaseSpaceH with " << blocksPerGrid << " blocks of " << threadsPerBlock << " threads" << std::endl;
+  std::cout << "\tCUDA kernel rebinnedPhaseSpaceH with " << blocksPerGrid << " blocks of " << threadsPerBlock << " threads" << std::endl;
   
   
   
@@ -2683,7 +2683,7 @@ void Sandman::sandSkewCUDA(const float distance_m)
    int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
    
    if(showCUDAsteps)  
-     printf("CUDA kernel skew with %d blocks of %d threads\n", blocksPerGrid,
+     printf("\tCUDA kernel skew with %d blocks of %d threads\n", blocksPerGrid,
 	    threadsPerBlock);
 
   
@@ -2716,7 +2716,7 @@ void Sandman::sandCollimateCUDA(const float divergenceH, const float divergenceV
    int threadsPerBlock = SANDMAN_CUDA_THREADS;
    int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
    if(showCUDAsteps)
-     printf("CUDA kernel collimation at %f and %f with %d blocks of %d threads\n", divergenceH, divergenceV, blocksPerGrid,
+     printf("\tCUDA kernel collimation at %f and %f with %d blocks of %d threads\n", divergenceH, divergenceV, blocksPerGrid,
 	  threadsPerBlock);
 
    // void global_collimation(float *d_weight, const float *d_pointsTheta, const float lower_angle, const float upper_angle, const int numElements)
@@ -2749,7 +2749,7 @@ void Sandman::sandApertureCUDA(const float window_width, const float window_heig
    int threadsPerBlock = SANDMAN_CUDA_THREADS;
    int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
    if(showCUDAsteps)
-     printf("CUDA kernel aperture of width %f and height %f with %d blocks of %d threads\n", window_width, window_height, blocksPerGrid,
+     printf("\tCUDA kernel aperture of width %f and height %f with %d blocks of %d threads\n", window_width, window_height, blocksPerGrid,
 	    threadsPerBlock);
 
    // void global_collimation(float *d_weight, const float *d_pointsTheta, const float lower_angle, const float upper_angle, const int numElements)
@@ -2809,7 +2809,7 @@ void Sandman::sandModerator(const float width,
    int threadsPerBlock = SANDMAN_CUDA_THREADS;
    int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
    if(showCUDAsteps)
-     printf("CUDA kernel sandModerator of width %f and height %f with %d blocks of %d threads\n", width, height, blocksPerGrid,
+     printf("\tCUDA kernel sandModerator of width %f and height %f with %d blocks of %d threads\n", width, height, blocksPerGrid,
 	    threadsPerBlock);
 
    
@@ -2844,7 +2844,7 @@ void Sandman::sandILLHCSModerator(void)
    int threadsPerBlock = SANDMAN_CUDA_THREADS;
    int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
    if(showCUDAsteps)
-     printf("CUDA kernel sandILLHCSModerator with %d blocks of %d threads\n", blocksPerGrid,
+     printf("\tCUDA kernel sandILLHCSModerator with %d blocks of %d threads\n", blocksPerGrid,
 	    threadsPerBlock);
 
    //Moderator brightness curve
@@ -2914,7 +2914,7 @@ void Sandman::sandReflectionH(const float mirrorYtop, const float mirrorYbottom,
    int threadsPerBlock = SANDMAN_CUDA_THREADS;
    int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
    if(showCUDAsteps)
-     printf("CUDA kernel reflection with %d blocks of %d threads\n", blocksPerGrid,
+     printf("\tCUDA kernel reflection with %d blocks of %d threads\n", blocksPerGrid,
 	    threadsPerBlock);
 
   
@@ -2957,7 +2957,7 @@ void Sandman::sandReflectionV(const float mirrorYtop, const float mirrorYbottom,
    int threadsPerBlock = SANDMAN_CUDA_THREADS;
    int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
    if(showCUDAsteps)
-     printf("CUDA kernel reflection with %d blocks of %d threads\n", blocksPerGrid,
+     printf("\tCUDA kernel reflection with %d blocks of %d threads\n", blocksPerGrid,
 	    threadsPerBlock);
 
   
@@ -2991,7 +2991,7 @@ void Sandman::sandRotation(const float angleH, const float angleV)
   int threadsPerBlock = SANDMAN_CUDA_THREADS;
   int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
   if(showCUDAsteps)
-    printf("CUDA kernel rotation with %d blocks of %d threads\n", blocksPerGrid,
+    printf("\tCUDA kernel rotation with %d blocks of %d threads\n", blocksPerGrid,
 	   threadsPerBlock);
    
   //static void global_rotation(float *d_pointsTheta, const float angle_radians, const int numElements)
@@ -3020,7 +3020,7 @@ void Sandman::sandRotationH(const float angleH)
   int threadsPerBlock = SANDMAN_CUDA_THREADS;
   int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
   if(showCUDAsteps)
-    printf("CUDA kernel rotationH with %d blocks of %d threads\n", blocksPerGrid,
+    printf("\tCUDA kernel rotationH with %d blocks of %d threads\n", blocksPerGrid,
 	   threadsPerBlock);
    
   //static void global_rotation(float *d_pointsTheta, const float angle_radians, const int numElements)
@@ -3047,7 +3047,7 @@ void Sandman::sandTranslationH(const float distance)
   int threadsPerBlock = SANDMAN_CUDA_THREADS;
   int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
   if(showCUDAsteps)
-    printf("CUDA kernel translationH with %d blocks of %d threads\n", blocksPerGrid,
+    printf("\tCUDA kernel translationH with %d blocks of %d threads\n", blocksPerGrid,
 	   threadsPerBlock);
    
 
@@ -3071,7 +3071,7 @@ void Sandman::sandTranslationV(const float distance)
   int threadsPerBlock = SANDMAN_CUDA_THREADS;
   int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
   if(showCUDAsteps)
-    printf("CUDA kernel translationV with %d blocks of %d threads\n", blocksPerGrid,
+    printf("\tCUDA kernel translationV with %d blocks of %d threads\n", blocksPerGrid,
 	   threadsPerBlock);
    
 
@@ -3428,9 +3428,11 @@ void Sandman::ellipticOpeningGuide(const float length, const float exitWidth, co
   std::cout << "\tLength " << length << " m and exit width = " << exitWidth  << " m focus2 at " << focalPoint2H << " " << focalPoint2V << " and focus1 at " << focalPoint1H << " " << focalPoint1V << " formed by " << numSections << " sections of " << section_length << " m" << std::endl;
   
   //Loop over converging guide approximations printing out the widths
-  
+
+#ifdef DEBUG 
   std::cout << "\tProfile:" << std::endl;
   std::cout << "\txpos width" << std::endl;
+#endif
   
   for (i = 0; i < numSections; i++) 
     {
@@ -3440,20 +3442,25 @@ void Sandman::ellipticOpeningGuide(const float length, const float exitWidth, co
       //Take JNADS curves and put these into two dimensions
       pieceEntrWidth = 2.0f * elliptic_curve(pieceStartx, focalPoint1H, focalPoint2H, exitWidth);
       pieceExitWidth = 2.0f * elliptic_curve(pieceEndx, focalPoint1H, focalPoint2H, exitWidth);
+#ifdef DEBUG
       std::cout << "\t" << pieceStartx << "  " << pieceEntrWidth << "  " << pieceExitWidth << " H" << std::endl;
+#endif
       dataFileH << "\t" << pieceStartx << "  " << pieceEntrWidth << std::endl;
       
       pieceEntrHeight = 2.0f * elliptic_curve(pieceStartx, focalPoint1V, focalPoint2V, exitHeight);
       pieceExitHeight = 2.0f * elliptic_curve(pieceEndx, focalPoint1V, focalPoint2V, exitHeight);
+#ifdef DEBUG
       std::cout << "\t" << pieceStartx << "  " << pieceEntrHeight << " V" << std::endl;
+#endif
       dataFileV << "\t" << pieceStartx << "  " << pieceEntrHeight << std::endl;
       
       if (i == (numSections - 1)) 
 	{
+#ifdef DEBUG
 	  std::cout << "\t" << pieceEndx << "  exit " << pieceExitWidth << std::endl;
-	  dataFileH << "\t" << pieceEndx << "  exit " << pieceExitWidth << std::endl;
-	  
 	  std::cout << "\t" << pieceEndx << "  exit " << pieceExitHeight << std::endl;
+#endif
+	  dataFileH << "\t" << pieceEndx << "  exit " << pieceExitWidth << std::endl;
 	  dataFileV << "\t" << pieceEndx << "  exit " << pieceExitHeight << std::endl;
 	}
       
@@ -3527,13 +3534,15 @@ void Sandman::ellipticClosingGuide(const float length, const float entrWidth, co
 	  
 	//Break guide into sections
 	section_length = length / (float) numSections;
-	
+
 	std::cout << "\tLength " << length << " m and focus2 at " << focalPoint2H << " " << focalPoint2V << " and focus1 at " << focalPoint1H << " " << focalPoint1V << " formed by " << numSections << " sections of m=" << mNumber;
+
 	
 	//Loop over converging guide approximations printing out the widths
-	
+#ifdef DEBUG
 	std::cout << "\tProfile:" << std::endl;
 	std::cout << "\txpos  width" << std::endl;
+#endif
 	
 	for (i = 0; i < numSections; i++) 
 	  {
@@ -3543,20 +3552,25 @@ void Sandman::ellipticClosingGuide(const float length, const float entrWidth, co
 	    //Take JNADS curves and put these into two dimensions
 	    pieceEntrWidth = 2.0f * elliptic_curve(pieceStartx, focalPoint1H, focalPoint2H, entrWidth);
 	    pieceExitWidth = 2.0f * elliptic_curve(pieceEndx, focalPoint1H, focalPoint2H, entrWidth);
+#ifdef DEBUG
 	    std::cout << "\t" << pieceStartx << "  " << pieceEntrWidth << " H" << std::endl;
+#endif
 	    dataFileH << "\t" << pieceStartx << "  " << pieceEntrWidth << std::endl;
 	    
 	    pieceEntrHeight = 2.0f * elliptic_curve(pieceStartx, focalPoint1V, focalPoint2V, entrHeight);
 	    pieceExitHeight = 2.0f * elliptic_curve(pieceEndx, focalPoint1V, focalPoint2V, entrHeight);
+#ifdef DEBUG
 	    std::cout << "\t" << pieceStartx << "  " << pieceEntrHeight << " V" << std::endl;
+#endif
 	    dataFileV << "\t" << pieceStartx << "  " << pieceEntrHeight << std::endl;
 	    
 	    if (i == numSections - 1) 
 	      {
+#ifdef DEBUG
 		std::cout << "\t" << pieceEndx << "  " << pieceExitWidth << std::endl;
-		dataFileH << "\t" << pieceEndx << "  " << pieceExitWidth << std::endl;
-
 		std::cout << "\t" << pieceEndx << "  " << pieceExitHeight << std::endl;
+#endif
+		dataFileH << "\t" << pieceEndx << "  " << pieceExitWidth << std::endl;
 		dataFileV << "\t" << pieceEndx << "  " << pieceExitHeight << std::endl;
 	      }
 	    
@@ -3753,7 +3767,7 @@ void Sandman::sample(
    int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
 
    if(showCUDAsteps)
-     printf("CUDA kernel sample wavelength allocation with %d blocks of %d threads\n", blocksPerGrid,
+     printf("\tCUDA kernel sample wavelength allocation with %d blocks of %d threads\n", blocksPerGrid,
 	    threadsPerBlock);
    
    global_sandAllocateWavelength<<<blocksPerGrid, threadsPerBlock>>>
@@ -3790,7 +3804,7 @@ void Sandman::sample(
     generateBothRandomArrays();
 
     if(showCUDAsteps)
-      printf("CUDA kernel sample Horizontal with %d blocks of %d threads\n", blocksPerGrid,
+      printf("\tCUDA kernel sample Horizontal with %d blocks of %d threads\n", blocksPerGrid,
 	     threadsPerBlock);
     
     global_sandSampleCUDA<<<blocksPerGrid, threadsPerBlock>>>
@@ -3801,7 +3815,7 @@ void Sandman::sample(
     generateBothRandomArrays();
 
     if(showCUDAsteps)
-      printf("CUDA kernel sample Vertical with %d blocks of %d threads\n", blocksPerGrid,
+      printf("\tCUDA kernel sample Vertical with %d blocks of %d threads\n", blocksPerGrid,
 	     threadsPerBlock);
     
     global_sandSampleCUDA<<<blocksPerGrid, threadsPerBlock>>>
@@ -3810,7 +3824,7 @@ void Sandman::sample(
 
     // Initialise trajectory brightness with the solid angle calculation
     if(showCUDAsteps)
-      std::cout << "CUDA kernel initArray on moderator flux with " << blocksPerGrid << " blocks of " << threadsPerBlock << " threads" << std::endl;
+      std::cout << "\tCUDA kernel initArray on moderator flux with " << blocksPerGrid << " blocks of " << threadsPerBlock << " threads" << std::endl;
     global_initArray<<<blocksPerGrid, threadsPerBlock>>>
       (d_modFlux, deltaAdeltaO, numElements);
 
@@ -3904,8 +3918,8 @@ void Sandman::displayWelcome(void)
   std::cout << "*                                      *" << std::endl;
   std::cout << "*               " << color_red << "SANDMAN" << color_reset << "                *" << std::endl;
   std::cout << "*                                      *" << std::endl;
-  std::cout << "*   Implementation of SAND in C++:     *" << std::endl;
-  std::cout << "*   Neutron beam transport on GPU      *" << std::endl;
+  std::cout << "*   Implementation of Neutron beam     *" << std::endl;
+  std::cout << "*   transport on GPU in C++ and CUDA   *" << std::endl;
   std::cout << "*                                      *" << std::endl;
   std::cout << "*   " << color_yellow << "phil.m.bentley@gmail.com" << color_reset << " 2016      *" << std::endl;
   std::cout << "*                                      *" << std::endl;
@@ -3950,7 +3964,7 @@ void Sandman::zeroHistogram1D(void)
   int threadsPerBlock = SANDMAN_CUDA_THREADS;
   int blocksPerGrid =(100 + threadsPerBlock - 1) / threadsPerBlock;
   if(showCUDAsteps)
-    std::cout << "CUDA kernel zero 1d histogram[" << 100 << "] with " << blocksPerGrid << " blocks of " << threadsPerBlock << " threads" << std::endl;
+    std::cout << "\tCUDA kernel zero 1d histogram[" << 100 << "] with " << blocksPerGrid << " blocks of " << threadsPerBlock << " threads" << std::endl;
   
   //void global_sandZeroHistogram1D(float *d_histogram, const int numElements)
   
@@ -3974,7 +3988,7 @@ void Sandman::zeroHistogram2D(void)
    int threadsPerBlock = SANDMAN_CUDA_THREADS;
    int blocksPerGrid =(100*100 + threadsPerBlock - 1) / threadsPerBlock;
    if(showCUDAsteps)
-     printf("CUDA kernel zeroHistogram2D with %d blocks of %d threads\n", blocksPerGrid,
+     printf("\tCUDA kernel zeroHistogram2D with %d blocks of %d threads\n", blocksPerGrid,
 	    threadsPerBlock);
    
    //void global_sandZeroHistogram1D(float *d_histogram, const int numElements)
@@ -3992,7 +4006,7 @@ float Sandman::arrayMinimum(const float *d_array, float *d_answer)
   int threadsPerBlock = SANDMAN_CUDA_THREADS;
   int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
   if(showCUDAsteps)
-    printf("CUDA kernel arrayMin %d blocks of %d threads\n", blocksPerGrid,
+    printf("\tCUDA kernel arrayMin %d blocks of %d threads\n", blocksPerGrid,
 	   threadsPerBlock);
 
 
@@ -4050,7 +4064,7 @@ float Sandman::arrayMaximum(const float *d_array, float *d_answer)
   int threadsPerBlock = SANDMAN_CUDA_THREADS;
   int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
   if(showCUDAsteps)
-    printf("CUDA kernel arrayMax %d blocks of %d threads\n", blocksPerGrid,
+    printf("\tCUDA kernel arrayMax %d blocks of %d threads\n", blocksPerGrid,
 	   threadsPerBlock);
 
 
@@ -4131,7 +4145,7 @@ void Sandman::sandSqueezeHorizontalBenderChannels(const float width, const float
   int threadsPerBlock = SANDMAN_CUDA_THREADS;
   int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
   if(showCUDAsteps)
-    printf("CUDA kernel squeeze h bender with %d blocks of %d threads\n", blocksPerGrid,
+    printf("\tCUDA kernel squeeze h bender with %d blocks of %d threads\n", blocksPerGrid,
 	   threadsPerBlock);
 
 
@@ -4160,7 +4174,7 @@ void Sandman::sandUnSqueezeHorizontalBenderChannels(const float width, const flo
   int threadsPerBlock = SANDMAN_CUDA_THREADS;
   int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
   if(showCUDAsteps)
-    printf("CUDA kernel unsqueeze h bender with %d blocks of %d threads\n", blocksPerGrid,
+    printf("\tCUDA kernel unsqueeze h bender with %d blocks of %d threads\n", blocksPerGrid,
 	   threadsPerBlock);
 
 

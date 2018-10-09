@@ -11,12 +11,16 @@ INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/include /usr/local/cuda/include
 # Build list of source files
 SET(SOURCES "")
 SET(HEADERS "")
+SET(SCRIPTS "")
 
 #C/C++ sources first
 LIST(APPEND SOURCES "src/sandmanCUDA.cu")
 
 #And also headers
 LIST(APPEND HEADERS "include/sandmanCUDA.h")
+
+#And visualisation scripts
+LIST(APPEND SCRIPTS "src/sandmanPlots.py")
 
 #Build options for CUDA
 #This is for deploy:
@@ -43,3 +47,4 @@ install(TARGETS sandmanCUDA DESTINATION /usr/lib)
 
 # Install library headers (needs root!)
 install(FILES ${HEADERS} DESTINATION /usr/include)
+install(FILES ${SCRIPTS} DESTINATION /usr/bin)
