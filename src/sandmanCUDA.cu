@@ -7,68 +7,80 @@
 ///   @section LICENSE
 ///
 ///   Copyright (c) 2016, Phil Bentley All rights reserved.
+///
+///   All rights reserved.
 
-///   Redistribution and use in source and binary forms, with or without
-///   modification, are permitted provided that the following conditions are
-///   met: 
-///   
-///   1. Redistributions of source code must retain the above copyright
-///   notice, this list of conditions and the following disclaimer.
-///   2. Redistributions in binary form must reproduce the above copyright
-///   notice, this list of conditions and the following disclaimer in the
-///   documentation and/or other materials provided with the distribution.
-///   3. All advertising materials mentioning features or use of this software
-///   must display the following acknowledgement: This product includes
-///   software developed by Phil Bentley.  
-///   4. Neither the name of Phil Bentley nor the names of other contributors
-///   may be used to endorse or promote products derived from this software
-///   without specific prior written permission.
-
-///   THIS SOFTWARE IS PROVIDED BY <COPYRIGHT HOLDER> ''AS IS'' AND ANY
-///   EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-///   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-///   PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE
-///   FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-///   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-///   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-///   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-///   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-///   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
-///   THE POSSIBILITY OF SUCH DAMAGE.
+///   Redistribution and use in source and binary forms, with or
+///   without modification, are permitted provided that the following
+///   conditions are met:
+///
+///   * Redistributions of source code must retain the above copyright
+///     notice, this list of conditions and the following disclaimer.
+///   * Redistributions in binary form must reproduce the above
+///     copyright notice, this list of conditions and the following
+///     disclaimer in the documentation and/or other materials
+///     provided with the distribution.
+///   * Neither the name of the ESS nor the names of its contributors
+///     may be used to endorse or promote products derived from this
+///     software without specific prior written permission.
+///
+///   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+///   CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+///   INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+///   MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+///   DISCLAIMED. IN NO EVENT SHALL PHIL BENTLEY BE LIABLE FOR
+///   ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+///   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+///   PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+///   OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+///   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR
+///   TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
+///   OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+///   OF SUCH DAMAGE.
 ///
 ///   @section DESCRIPTION
 ///
-///   Sandman is a ridiculously fast monte-carlo code for simulating white
-///   neutron beams.
+///   Sandman is a ridiculously fast monte-carlo code for simulating
+///   polychromatic neutron beams.
 ///
-///   Sandman uses the math in neutron acceptance diagram shading (nads) to
-///   implement a monte-carlo method of ray tracing, by breaking up the
-///   simulation into two independent planes.  This is faster than 3D tracing
-///   plane intersections, even though it is theoretically identical.  At this
-///   time, the first protypte of the code was called sandlib.
+///   Sandman uses the math in neutron acceptance diagram shading
+///   (nads, which is monochromatic) to implement a monte-carlo method
+///   of ray tracing, by breaking up the simulation into two
+///   independent planes with finite phase space boundaries.  This is
+///   significantly faster than 3D tracing plane intersections, even
+///   though it produces mathematically identical output.  The
+///   limitation is that it can only simulate beams where the
+///   horizontal and vertical phase spaces are independent
+///   (e.g. rectangular neutron guides).
 ///   
-///   The modern code is presented to the user as a shared library (.so) with
-///   which to link and and create an instance of a Sandman object.  Calling
-///   the sandman class public functions creates a simulation of a neutron
-///   beam on an NVIDIA GPU using NVIDIA'S CUDA API.  At this point, the
-///   project evolved into not a library, but the core of any dedicated
-///   program that a user wanted to build.
+///   This code provides to the user a shared library (.so) which you
+///   can install on your system.  Thereafter, you create a sandman
+///   program that represents the instrument simulation and link this
+///   library.  Calling the sandman class public functions creates a
+///   simulation of a neutron beam on an NVIDIA GPU using NVIDIA'S
+///   CUDA API.
 ///
-///   The simulation begins at the SAMPLE POSITION, and works backwards.  This
-///   is for very good reason.  Start with the phase space you need, and work
-///   from there.  It's also orders of magnitude quicker in most cases to work
-///   like this.  To handle this reverse tracing method, sandman's beam
-///   monitors and calculations have been specially written in a way to
-///   provide correct and accurate results.  For example, the beam monitor
-///   functions store a copy of the position of the neutrons, and mirror the
-///   divergence; then at the end of the calculation the statistical weight is
-///   calculated, so that the beam profile at that position matches the result
-///   that VITESS or MCSTAS would give you when simulating forwards.
-///   Nonetheless, there is nothing in the code that prevents you from doing a
-///   forwards simulation.  Just define a sample with sandman that is the same
-///   size as the moderator, and a sandman moderator that is the same size as
-///   the instrument sample, and set the mirror image parameter in the
-///   relevant monitor functions to "false".
+///   There are some fundamental differences between this code and
+///   existing codes at the time of writing.
+///
+///   The geometry definition begins at the SAMPLE POSITION, and works
+///   backwards.  This is for very good reason.  Start with the phase
+///   space you need, and work from there.  It's also orders of
+///   magnitude quicker in most cases to work like this.  To handle
+///   this reverse tracing method, sandman's beam monitors and
+///   calculations have been specially written in a way to provide
+///   correct results in the backwards or forwards direction.  For
+///   example, the beam monitor functions store a copy of the position
+///   of the neutrons, and mirror the divergence; then at the end of
+///   the calculation the statistical weight is calculated, so that
+///   the beam profile at that position matches the result that VITESS
+///   or MCSTAS would give you when simulating forwards.  Nonetheless,
+///   there is nothing in the code that prevents you from doing a
+///   forwards simulation --- if you insist!  Just define a sample
+///   with sandman that is the same size as the moderator, and a
+///   sandman moderator that is the same size as the instrument
+///   sample, and set the mirror image parameter in the relevant
+///   monitor functions to "false".
 ///
 //////////////////////////////////////////////////////////////////////////////////
 
@@ -84,26 +96,26 @@
 
 #define DEBUG 1
 
-const float thetaCritNickel=0.099138f;
-//#define NICKEL_REFLECTIVITY 0.98f-0.01288f
-//#define NICKEL_REFLECTIVITY 0.96712
+
+// Physical Constants
+
+const static float thetaCritNickel=0.099138f;
 #define NICKEL_REFLECTIVITY 0.967f
 
-
-const float thetaCritStandardLambda = 1.0f;
-const int maxElements = 10000000;
-const float deadWeight = 0.01f;
-const float PI_FLOAT = 3.1415927f;
-//const float nickelReflectivity = 0.98;
-//const float criticalReflectivity = 0.75;
+const static float thetaCritStandardLambda = 1.0f;
+const static int maxElements = 10000000;
+const static float deadWeight = 0.01f;
+const static float PI_FLOAT = 3.1415927f;
 
 
-const std::string color_red("\033[0;31m");
-const std::string color_green("\033[1;32m");
-const std::string color_yellow("\033[1;33m");
-const std::string color_cyan("\033[0;36m");
-const std::string color_magenta("\033[0;35m");
-const std::string color_reset("\033[0m");
+// Define colours for terminal output text highlighting
+
+const static std::string color_red("\033[0;31m");
+const static std::string color_green("\033[1;32m");
+const static std::string color_yellow("\033[1;33m");
+const static std::string color_cyan("\033[0;36m");
+const static std::string color_magenta("\033[0;35m");
+const static std::string color_reset("\033[0m");
 
 
 
@@ -142,17 +154,6 @@ static inline float square2circleFlux(const float num)
 
 
 
-/// This function appears stupid, but there is a reason: the conic section
-/// functions were generated using mathematica, and exporting to C, then
-/// ported to JAVA as part of JNADS, and now they appear here!  However,
-/// rather than start from scratch, I just implement similar functions that
-/// will be fast in CUDA to save time.
-__host__ __device__
-static inline float fastPow2(float arg)
-{
-  return(arg*arg);
-}
-
 
 __host__ __device__
 static float elliptic_curve(const float xpos, const float fp1, const float fp2, const float maxWidth) 
@@ -172,53 +173,6 @@ static float elliptic_curve(const float xpos, const float fp1, const float fp2, 
   float y2 = b*b - (xpos-x0)*(xpos-x0)*b*b/(f*f-b*b);
 
   return(sqrtf(fabsf(y2)));
-}
-
-
-
-
-__host__ __device__
-static float elliptic_opening_curve_old(float xpos, float length, float fp1, float fp2, float outWidth) 
-{
-  //An ellipse where the entrance width is specified Code translated
-  //directly from mathematica using CForm to avoid time expensive bugs
-  
-  float x0;
-  
-  x0 = (8.0f*fp1 + 8.0f*fp2 - 4.0f*sqrtf(2.0f)*sqrtf(2.0f*fastPow2(fp1) +
-						     2.0f*fastPow2(fp2) - 4.0f*fp1*length - 4.0f*fp2*length +
-						     4.0f*fastPow2(length) + fastPow2(outWidth) +
-						     sqrtf((4.0f*fastPow2(fp1) - 8.0f*fp1*length + 4.0f*fastPow2(length) +
-							    fastPow2(outWidth))*(4.0f*fastPow2(fp2) - 8.0f*fp2*length +
-										 4.0f*fastPow2(length) + fastPow2(outWidth)))))/16.0f;
-  
-  return(
-	 sqrtf((4.0f*(fp1 - x0)*(fp2 - x0)*(-x0 + xpos))/(fp1 + fp2 - 2.0f*x0) -
-	       (1.0f - fastPow2(fp1 - fp2)/fastPow2(fp1 + fp2 - 2.0f*x0))*fastPow2(-x0
-										   + xpos))
-	 );
-}
-
-
-
-__host__ __device__
-static float elliptic_closing_curve_old(float xpos, float length, float fp1, float fp2, float inWidth) 
-{
-  //An ellipse where the exit width is specified
-  //Code translated directly from mathematica using CForm to avoid bugs
-  
-  float x0;
-  
-  x0 = (8.0f*fp1 + 8.0f*fp2 - 4.0f*sqrtf(2.0f)*sqrtf(2.0f*fastPow2(fp1) + 
-						     2.0f*fastPow2(fp2) + fastPow2(inWidth) + 
-						     sqrtf((4.0f*fastPow2(fp1) + 
-							    fastPow2(inWidth))*(4.0f*fastPow2(fp2) + fastPow2(inWidth)))))/16.0f;
-  
-  return(
-	 sqrtf((4.0f*(fp1 - x0)*(fp2 - x0)*(-x0 + xpos))/(fp1 + fp2 - 2.0f*x0) -
-	       (1.0f - fastPow2(fp1 - fp2)/fastPow2(fp1 + fp2 - 2*x0))*fastPow2(-x0
-										 + xpos))
-	 );
 }
 
 
@@ -245,81 +199,13 @@ static float parabolic_opening_curve(float xpos, float len, float foc, float out
   float ans;
   
   x0 = (2.0f*foc + 2.0f*len -
-	sqrtf(4.0f*fastPow2(foc) -
-		  8.0f*foc*len + 4.0f*fastPow2(len) +
-		  fastPow2(outw)))/4.0f;
+	sqrtf(4.0f*foc*foc -
+		  8.0f*foc*len + 4.0f*len*len +
+		  outw*outw))/4.0f;
   
   ans = 2.0f*sqrtf((foc - x0)*(-x0 + xpos));
   
   return (ans);
-}
-
-
-
-__host__ __device__
-static float hyperbolic_opening_curve(float xpos, float len, float foc1, float foc2, float outw) 
-{
-  float x0;
-  float ans;
-  
-  if(foc2 < foc1) {
-    printf("WARNING: hyperbolic curve with f2 < f1 may be badly defined");
-  }
-  
-  x0 = (8.0f*foc1 + 8.0f*foc2 -
-	4.0f*sqrtf(2.0f)*
-	sqrtf(2.0f*fastPow2(foc1) +
-		  2.0f*fastPow2(foc2) -
-		  4.0f*foc1*len - 4.0f*foc2*len +
-		  4.0f*fastPow2(len) +
-		  fastPow2(outw) -
-		  sqrtf((4.0f*fastPow2(foc1) -
-			     8.0f*foc1*len +
-			     4.0f*fastPow2(len) +
-			     fastPow2(outw))*
-			    (4.0f*fastPow2(foc2) -
-			     8.0f*foc2*len +
-			     4.0f*fastPow2(len) +
-			     fastPow2(outw)))))/16.0f;
-  
-  ans = sqrtf((4.0f*(foc1 - x0)*(foc2 - x0)*
-		   (-x0 + xpos))/
-		  (foc1 + foc2 - 2.0f*x0) -
-		  (1.0f - fastPow2(foc1 - foc2)/
-		   fastPow2(foc1 + foc2 - 2.0f*x0))
-		  *fastPow2(-x0 + xpos));
-  
-  return(ans);
-}
-
-
-__host__ __device__
-static float hyperbolic_closing_curve(float xpos, float foc1, float foc2, float inw) {
-  float x0;
-  float ans;
-  
-  if(foc2 < foc1) {
-    printf("WARNING: hyperbolic curve with f2 < f1 may be badly defined");
-  }
-  
-  x0 = (8.0f*foc1 + 8.0f*foc2 -
-	4.0f*sqrtf(2.0f)*
-	sqrtf(2.0f*fastPow2(foc1) + 
-		  2.0f*fastPow2(foc2) +
-		  fastPow2(inw) -
-		  sqrtf((4.0f*fastPow2(foc1) +
-			     fastPow2(inw))*
-			    (4.0f*fastPow2(foc2) +
-			     fastPow2(inw)))))/16.0f;
-  
-  ans = sqrtf((4.0f*(foc1 - x0)*(foc2 - x0)*
-		   (-x0 + xpos))/
-		  (foc1 + foc2 - 2.0f*x0) -
-		  (1.0f - fastPow2(foc1 - foc2)/
-		   fastPow2(foc1 + foc2 - 2.0f*x0))
-		  *fastPow2(-x0 + xpos));
-  
-  return(ans);
 }
 
 
@@ -376,6 +262,9 @@ static void global_countNeutrons0(float *numNeutrons, const float *weightH, cons
 
 
 
+
+
+// Array reduction routines.  Tried many of these, some are faster than others.
 
 __device__ 
 void blockReduce1(float *array)
