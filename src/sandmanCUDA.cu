@@ -154,9 +154,31 @@ static inline float fastPow2(float arg)
 }
 
 
+__host__ __device__
+static float elliptic_curve(const float xpos, const float fp1, const float fp2, const float maxWidth) 
+{
+  //An ellipse where the entrance width is specified
+
+  //find centre of ellipse independent of order of fp1 and fp2
+  const float x0 = (fp1 + fp2) / 2.0f;
+  
+  //find the absolute focal point relative to x0
+  float f = fabsf((fp2 - fp1) / 2.0f);
+
+  //b value is half the width
+  float b = maxWidth / 2.0f;
+
+  //return the y value of the curve
+  float y2 = b*b - (xpos-x0)*(xpos-x0)*b*b/(f*f-b*b);
+
+  return(sqrtf(fabsf(y2)));
+}
+
+
+
 
 __host__ __device__
-static float elliptic_opening_curve(float xpos, float length, float fp1, float fp2, float outWidth) 
+static float elliptic_opening_curve_old(float xpos, float length, float fp1, float fp2, float outWidth) 
 {
   //An ellipse where the entrance width is specified Code translated
   //directly from mathematica using CForm to avoid time expensive bugs
@@ -180,7 +202,7 @@ static float elliptic_opening_curve(float xpos, float length, float fp1, float f
 
 
 __host__ __device__
-static float elliptic_closing_curve(float xpos, float length, float fp1, float fp2, float inWidth) 
+static float elliptic_closing_curve_old(float xpos, float length, float fp1, float fp2, float inWidth) 
 {
   //An ellipse where the exit width is specified
   //Code translated directly from mathematica using CForm to avoid bugs
@@ -3514,7 +3536,7 @@ void Sandman::ellipticOpeningGuide(const float length, const float exitWidth, co
   //Break guide into sections
   section_length = length / (float) numSections;
   
-  std::cout << "\tLength " << length << " m and focus2 at " << focalPoint2H << " " << focalPoint2V << " and focus1 at " << focalPoint1H << " " << focalPoint1V << " formed by " << numSections << " sectoins of m=" << mNumber;
+  std::cout << "\tLength " << length << " m and exit width = " << exitWidth  << " m focus2 at " << focalPoint2H << " " << focalPoint2V << " and focus1 at " << focalPoint1H << " " << focalPoint1V << " formed by " << numSections << " sections of " << section_length << " m" << std::endl;
   
   //Loop over converging guide approximations printing out the widths
   
@@ -3527,23 +3549,23 @@ void Sandman::ellipticOpeningGuide(const float length, const float exitWidth, co
       pieceEndx = section_length * (float) (i + 1);
       
       //Take JNADS curves and put these into two dimensions
-      pieceEntrWidth = 2.0f * elliptic_opening_curve(pieceStartx, length, focalPoint1H, focalPoint2H, exitWidth);
-      pieceExitWidth = 2.0f * elliptic_opening_curve(pieceEndx, length, focalPoint1H, focalPoint2H, exitWidth);
-      std::cout << "\t" << pieceStartx << "  " << pieceEntrWidth << std::endl;
+      pieceEntrWidth = 2.0f * elliptic_curve(pieceStartx, focalPoint1H, focalPoint2H, exitWidth);
+      pieceExitWidth = 2.0f * elliptic_curve(pieceEndx, focalPoint1H, focalPoint2H, exitWidth);
+      std::cout << "\t" << pieceStartx << "  " << pieceEntrWidth << "  " << pieceExitWidth << " H" << std::endl;
       dataFileH << "\t" << pieceStartx << "  " << pieceEntrWidth << std::endl;
       
-      pieceEntrHeight = 2.0f * elliptic_opening_curve(pieceStartx, length, focalPoint1V, focalPoint2V, exitHeight);
-      pieceExitHeight = 2.0f * elliptic_opening_curve(pieceEndx, length, focalPoint1V, focalPoint2V, exitHeight);
-      std::cout << "\t" << pieceStartx << "  " << pieceEntrHeight << std::endl;
+      pieceEntrHeight = 2.0f * elliptic_curve(pieceStartx, focalPoint1V, focalPoint2V, exitHeight);
+      pieceExitHeight = 2.0f * elliptic_curve(pieceEndx, focalPoint1V, focalPoint2V, exitHeight);
+      std::cout << "\t" << pieceStartx << "  " << pieceEntrHeight << " V" << std::endl;
       dataFileV << "\t" << pieceStartx << "  " << pieceEntrHeight << std::endl;
       
-      if (i == numSections - 1) 
+      if (i == (numSections - 1)) 
 	{
-	  std::cout << "\t" << pieceEndx << "  " << pieceExitWidth << std::endl;
-	  dataFileH << "\t" << pieceEndx << "  " << pieceExitWidth << std::endl;
+	  std::cout << "\t" << pieceEndx << "  exit " << pieceExitWidth << std::endl;
+	  dataFileH << "\t" << pieceEndx << "  exit " << pieceExitWidth << std::endl;
 	  
-	  std::cout << "\t" << pieceEndx << "  " << pieceExitHeight << std::endl;
-	  dataFileV << "\t" << pieceEndx << "  " << pieceExitHeight << std::endl;
+	  std::cout << "\t" << pieceEndx << "  exit " << pieceExitHeight << std::endl;
+	  dataFileV << "\t" << pieceEndx << "  exit " << pieceExitHeight << std::endl;
 	}
       
       sandGuideElementCUDA(length,
@@ -3617,7 +3639,7 @@ void Sandman::ellipticClosingGuide(const float length, const float entrWidth, co
 	//Break guide into sections
 	section_length = length / (float) numSections;
 	
-	std::cout << "\tLength " << length << " m and focus2 at " << focalPoint2H << " " << focalPoint2V << " and focus1 at " << focalPoint1H << " " << focalPoint1V << " formed by " << " sections of m=" << mNumber;
+	std::cout << "\tLength " << length << " m and focus2 at " << focalPoint2H << " " << focalPoint2V << " and focus1 at " << focalPoint1H << " " << focalPoint1V << " formed by " << numSections << " sections of m=" << mNumber;
 	
 	//Loop over converging guide approximations printing out the widths
 	
@@ -3630,14 +3652,14 @@ void Sandman::ellipticClosingGuide(const float length, const float entrWidth, co
 	    pieceEndx = section_length * (float) (i + 1);
 	    
 	    //Take JNADS curves and put these into two dimensions
-	    pieceEntrWidth = 2.0f * elliptic_closing_curve(pieceStartx, length, focalPoint1H, focalPoint2H, entrWidth);
-	    pieceExitWidth = 2.0f * elliptic_closing_curve(pieceEndx, length, focalPoint1H, focalPoint2H, entrWidth);
-	    std::cout << "\t" << pieceStartx << "  " << pieceEntrWidth << std::endl;
+	    pieceEntrWidth = 2.0f * elliptic_curve(pieceStartx, focalPoint1H, focalPoint2H, entrWidth);
+	    pieceExitWidth = 2.0f * elliptic_curve(pieceEndx, focalPoint1H, focalPoint2H, entrWidth);
+	    std::cout << "\t" << pieceStartx << "  " << pieceEntrWidth << " H" << std::endl;
 	    dataFileH << "\t" << pieceStartx << "  " << pieceEntrWidth << std::endl;
 	    
-	    pieceEntrHeight = 2.0f * elliptic_closing_curve(pieceStartx, length, focalPoint1V, focalPoint2V, entrHeight);
-	    pieceExitHeight = 2.0f * elliptic_closing_curve(pieceEndx, length, focalPoint1V, focalPoint2V, entrHeight);
-	    std::cout << "\t" << pieceStartx << "  " << pieceEntrHeight << std::endl;
+	    pieceEntrHeight = 2.0f * elliptic_curve(pieceStartx, focalPoint1V, focalPoint2V, entrHeight);
+	    pieceExitHeight = 2.0f * elliptic_curve(pieceEndx, focalPoint1V, focalPoint2V, entrHeight);
+	    std::cout << "\t" << pieceStartx << "  " << pieceEntrHeight << " V" << std::endl;
 	    dataFileV << "\t" << pieceStartx << "  " << pieceEntrHeight << std::endl;
 	    
 	    if (i == numSections - 1) 
@@ -3995,7 +4017,6 @@ void Sandman::displayWelcome(void)
   std::cout << "*                                      *" << std::endl;
   std::cout << "*   Implementation of SAND in C++:     *" << std::endl;
   std::cout << "*   Neutron beam transport on GPU      *" << std::endl;
-  std::cout << "*   Fucking ZERO messing about         *" << std::endl;
   std::cout << "*                                      *" << std::endl;
   std::cout << "*   " << color_yellow << "phil.m.bentley@gmail.com" << color_reset << " 2016      *" << std::endl;
   std::cout << "*                                      *" << std::endl;
