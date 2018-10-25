@@ -1626,6 +1626,7 @@ void Sandman::report(void)
     {
       std::cout << "\tTrajectory counter:" << std::endl;
       std::cout << "\t\tGot " << traj << " trajectories" << std::endl;
+      std::cout << "\t\tEfficiency = " << 100*traj/numElements;
     }
   
 }
