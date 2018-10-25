@@ -8,8 +8,23 @@ Neutron raytracing done 100% on NVIDIA GPU.
 
 ### How fast is it?
 
-Benchmarked against standard code (VITESS) the raw computation is x18 faster.
-Taking into account the inversion of the geometry, it is >3000x faster.
+Benchmarked against standard code (VITESS) the raw computation is x18
+faster than existing code, but there is also the geometry inversion
+which makes it crazy fast.
+
+### Why?  What?  How?
+
+Klaus Habicht and I were standing on the stairs at HMI (now HZB) about
+11 years ago, and I was looking between my feet through 3 floors of
+fire escape.  This gave me a funny idea that instead of simulating
+trajectories you might be able to construct a phase space volume and
+compress it flat, and the projection operation would do the whole work
+for you.  This ended up as acceptance diagram shading 8 years ago.  We
+also tried GPU back then, but the memory bottleneck was not great.
+Now there is no memory bottleneck on GPUs, and there is also a decade
+of GPU development and a lot of GPU memory.  So you take the maths
+from acceptance diagram shading, combine it with monte-carlo, run the
+whole lot on the GPU.
 
 ### What Components are Supported?
 
