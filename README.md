@@ -82,3 +82,16 @@ multiple times (e.g. lengths of curved guide).
 Most of your work will be with wrapper functions, but for simple
 devices like slits or empty space then you probably will call a CUDA
 function.
+
+The monitor functions on the CPU are for developers and intended for
+**debugging purposes only** and will give **incorrect** results for
+users.  They immediately dump the phase space present at that
+position.
+
+The monitor functions running on GPU are for users.  These wait until
+the calculation is finished, then weight the trajectories by the
+statistical weight and output the phase space in the correct
+orientation as though the neutrons were simulated in the forwards
+direction.  The GPU functions are the ones that users should be
+interested in!
+
