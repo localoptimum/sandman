@@ -2258,9 +2258,6 @@ void Sandman::phaseSpaceMapH(const char *filename)
   /// @param filename pointer to const char name of file to use for output of
   /// the histogram.  
   ///
-  /// 
-  /// \todo THIS FUNCTION DOES NOT WORK.  It relies on the 2D histogram code,
-  /// which currently has a race condition that needs fixing.
   ///
   
   // float *h_histogram=NULL;
