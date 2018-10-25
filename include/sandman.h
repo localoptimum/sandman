@@ -11,7 +11,7 @@
 #define NICKEL_REFLECTIVITY                             0.98            ///reflectivity of nickel below m=1
 #define CRITICAL_REFLECTIVITY                   0.75            ///reflectivity of supermirror at critical edge
 
-// There is no excuse for this 10 year old shit TODO stick this in as a (static) inline function for XXXX sake:
+// TODO stick this in as a (static) inline function
 #define DEGREES_TO_RADIANS M_PI/180.0
 #define RADIANS_TO_DEGREES 180.0/M_PI 
 
@@ -84,39 +84,61 @@ class Sandman {
   void generateOneRandomArray(void);
 
 
-  void sample(const float width, const float height, const float win_width, const float win_height, const float hoffset, const float voffset, const float win_dist, const float lambdaMin, const float lambdaMax);
-
+  /// Sample creates the sample object from which rays are traced.
+  void sample(
+	      const float width,      ///< Width of sample (m)
+	      const float height,     ///< Height of sample (m)
+	      const float win_width,  ///< Width of the window through which all trajectories must pass (e.g. guide exit)
+	      const float win_height, ///< Height of the window through which all trajectories must pass (e.g. guide exit)
+	      const float hoffset,    ///< Horizontal offset of the sample relative to the centre of the window
+	      const float voffset,    ///< Vertical offset of the sample relative to the centre of the window 
+	      const float win_dist,   ///< Distance between the sample and the window
+	      const float lambdaMin,  ///< Minimum wavelength to generate
+	      const float lambdaMax   ///< Maximum wavelength to generate
+	      );
+  
+  /// A guide element is a single piece of guide unit that forms the
+  /// basis for all reflection geometries.  This function runs purely
+  /// on the GPU and is not usually called by the user in the API, but
+  /// it is provided in case someone needs to create a fancy guide
+  /// shape that is not given by the other functions..
   void sandGuideElementCUDA(
-			  const float length, 
-			  const float entr_width, 
-			  const float exit_width, 
-			  const float exit_offset_h, 
-			  const float mLeft, 
-			  const float mRight, 
-			  const float entr_height,
-			  const float exit_height,
-			  const float mTop,
-			  const float mBottom,
-			  const float exit_offset_v);
+			    const float length,           ///<Length of unit.  Generally, vendors sell 0.5 m or 1 m long pieces.
+			    const float entr_width,       ///<Width of the entrance of the section (m)
+			    const float exit_width,       ///<Width of the exit of the section (m)
+			    const float exit_offset_h,    ///<Offset of the exit centre relative to the entrance centre, projected back along a vector normal to the entrance plane (m). 
+			    const float mLeft,            ///<m-value of the left of the guide (relative to nickel)
+			    const float mRight,           ///<m-value of the right of the guide (relative to nickel)
+			    const float entr_height,      ///<Entrance height of the section (m)
+			    const float exit_height,      ///<Exit height of the section (m)
+			    const float mTop,             ///<m-value of the top of the guide (relative to nickel)
+			    const float mBottom,          ///<m-value of the bottom of the guide (relative to nickel)
+			    const float exit_offset_v     ///<Offset of the exit centre relative to the entrance centre, projected back along a vector normal to the entrance plane (m). 
+			    );
 
+  /// Loops over sandGuideElementCUDA to implement a simple, straight guide with constant cross section and one m value on all surfaces.
   void sandSimpleStraightGuide(
-		       const float length,
-		       const float width,
-		       const float height,
-		       const float mval);
+			       const float length,   ///<Total length of the guide (m)
+			       const float width,    ///<Width of the guide (m)
+			       const float height,   ///<Height of the guide (m)
+			       const float mval      ///<m-value of the guide (relative to nickel)
+			       );
 
+  /// Loops over sandGuideElementCUDA to implement a simple, curved guide with constant cross section and one m value on all surfaces.
   void sandCurvedGuide(
-		       const float length,
-		       const float sectionLength,
-		       const float width,
-		       const float height,
-		       const float mval,
-		       const float radius
+		       const float length,          ///<Total length of the curved guide (m)
+		       const float sectionLength,   ///<Length of each straight section of guide making up the curve (m) 
+		       const float width,           ///<Width of the guide (m)
+		       const float height,          ///<Height of the guide (m)
+		       const float mval,            ///<m-value of the guide (relative to nickel)
+		       const float radius           ///<Radius of curvature of the guide (m)
 		       );
 
+  /// Provides a model of the ILL Horizontal Curved Source moderator with no extra code.  References to follow...
   void sandILLHCSModerator(void);
 
 
+  /// A general moderator with a single characteristic maxwellian temperature
   void sandModerator(
 		     const float width,
 		     const float height,
@@ -125,6 +147,7 @@ class Sandman {
 		     const float temp,
 		     const float num);
 
+  /// Overloaded definition of moderator to have two 
   void sandModerator(
 		     const float width1,
 		     const float height1,
