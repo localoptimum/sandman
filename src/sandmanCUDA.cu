@@ -1,4 +1,4 @@
-///////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////
 /// 
 ///   @sandmanCUDA.cu
 ///   @author Phil Bentley <phil.m.bentley@gmail.com
@@ -1625,8 +1625,8 @@ void Sandman::report(void)
   if(traj > 0.0f)
     {
       std::cout << "\tTrajectory counter:" << std::endl;
-      std::cout << "\t\tGot " << traj << " trajectories" << std::endl;
-      std::cout << "\t\tEfficiency = " << 100*traj/numElements;
+      std::cout << "\t\tGot " << traj << " trajectories having started with " << numElements << std::endl;
+      std::cout << "\t\tEfficiency = " << 100*traj/numElements << "%" << std::endl;
     }
   
 }
