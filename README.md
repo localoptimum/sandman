@@ -8,16 +8,18 @@ Neutron raytracing done 100% on NVIDIA GPU.
 
 ### How fast is it?
 
-2E+06 neutrons down an elliptic guide in around 10 milliseconds on a
-GTX 1060.
+Benchmarked against standard code (VITESS) the raw computation is x18 faster.
+Taking into account the inversion of the geometry, it is >3000x faster.
 
-### What Guide Geometries are Supported?
+### What Components are Supported?
 
-* Straight pieces
-* Curved pieces
+* Straight pieces of guide
+* Curved pieces of guide
 * Multichannel benders
 * Elliptic curves (polygon)
 * Parabolic curves (not tested yet)
+* 1D wavelength monitor
+* Horizontal phase space map
 
 
 ## Introduction
