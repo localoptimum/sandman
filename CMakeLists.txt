@@ -4,8 +4,7 @@ project(sandmanCUDA)
 
 FIND_PACKAGE(CUDA REQUIRED)
 
-INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/include /usr/local/cuda/include
-~/CUDA/NVIDIA_CUDA-8.0_Samples/common/inc )
+INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/include /usr/local/cuda/include /usr/local/cuda-10.1/samples/common/inc)
 
 
 # Build list of source files
