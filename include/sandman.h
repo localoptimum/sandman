@@ -137,6 +137,14 @@ class Sandman {
   /// Provides a model of the ILL Horizontal Curved Source moderator with no extra code.  References to follow...
   void sandILLHCSModerator(void);
 
+  /// A brilliance transfer moderator
+  void sandBrillianceTransferModerator(
+		     const float width,
+		     const float height,
+		     const float hoffset,
+		     const float voffset,
+		     const float temp,
+		     const float num);
 
   /// A general moderator with a single characteristic maxwellian temperature
   void sandModerator(

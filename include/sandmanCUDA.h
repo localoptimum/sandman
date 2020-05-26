@@ -180,8 +180,32 @@ class Sandman {
 			    const int numSections
 			    );
 
+  void parabolicOpeningGuide(
+			     const float length, 
+			     const float entr_width, 
+			     const float entr_height, 
+			     const float focalPointH, 
+			     const float focalPointV,
+			     const float mNumber, 
+			     const int numSections
+			     );
+
+  
+  void parabolicClosingGuide(
+			     const float length, 
+			     const float entr_width, 
+			     const float entr_height, 
+			     const float focalPointH, 
+			     const float focalPointV,
+			     const float mNumber, 
+			     const int numSections
+			     );
+
+
   
   void sandILLHCSModerator(void);
+
+  void sandPSIModerator(void);
 
   void sandBrillianceTransferModerator(
 				       const float width,
@@ -239,6 +263,8 @@ class Sandman {
 
   void sandTranslationV(const float distanceV);
   void sandTranslationH(const float distanceH);
+
+  void sandRollPhaseSpace(const float theta);
 
   void sandFreeSpaceCUDA(const float distance, const bool& verbose=true);
   void sandSkewCUDA(const float distance_m);

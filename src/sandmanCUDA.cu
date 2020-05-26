@@ -103,7 +103,7 @@ const static float thetaCritNickel=0.099138f;
 #define NICKEL_REFLECTIVITY 0.967f
 
 const static float thetaCritStandardLambda = 1.0f;
-const static int maxElements = 10000000;
+const static int maxElements = 100000000;
 const static float deadWeight = 0.001f;
 const static float PI_FLOAT = 3.1415927f;
 
@@ -571,18 +571,15 @@ static void global_squeezeBenderChannel(float *ypos, float *channelNumber, const
 __global__
 static void global_unSqueezeBenderChannel(float *ypos, const float *channelNumber, const float width, const float channelWidth, const float waferThickness, const int numElements)
 {
-  // Calculates the total emitted neutron current represented by this
-  // trajectory, based on its interception with one moderator surace
-  // characterised by a single temperature temp, width width, positioned with
-  // an offset hoffset, and a brightness num
   
   int i = blockIdx.x*blockDim.x + threadIdx.x;
-  float preY;
+
+  //float preY=0.0;
 
   if(i<numElements)
     {
 
-      preY = ypos[i];
+      //float preY = ypos[i];
 
       //Device reverses the position adjustment of sandSqueeze...
       ypos[i] = ypos[i] + 0.5f * (channelWidth - waferThickness);
@@ -646,6 +643,24 @@ static float maxwellian(const float brightness0, const float tempK, const float 
 
 
 __host__ __device__
+static float psiMODERATOR(const float lambda_A)
+{
+
+  //Defined __host__ __device__ so it can be unit tested if required
+
+  return(
+	 maxwellian(4.035E12f, 103.97f, lambda_A)
+	 +
+	 maxwellian(2.503E12, 25.56f, lambda_A)
+	 +
+	 maxwellian(1.399E13, 298.411f, lambda_A)
+	 );
+}
+
+
+
+
+__host__ __device__
 static float illHCS(const float lambda_A)
 {
 
@@ -697,6 +712,44 @@ static void global_sandILLHCSModerator(float *d_modFluxH, float *d_weightH, cons
 	}
     }
 }
+
+
+
+
+
+__global__
+static void global_sandPSIModerator(float *d_modFluxH, float *d_weightH, const float *d_lambdag, const float *d_pointsYH, const int numElements)
+{
+  // Calculates the total emitted neutron current represented by this
+  // trajectory, based on its interception with one moderator surace
+  // characterised by a single temperature temp, width width, positioned with
+  // an offset hoffset, and a brightness num
+  
+  float ymax, ymin;
+  
+  ymax = 0.206f/2.0f;
+  ymin = -ymax;
+
+  int i = blockIdx.x*blockDim.x + threadIdx.x;
+
+  if(i < numElements)
+    {
+      //The sample module assigns the scaling factor related to solid angle, now we do moderator brightness
+      if(d_modFluxH[i] < 10.0f)
+	{
+	  //That check means we did not already calculate the flux, so we need to do it now:
+	  d_modFluxH[i] = d_modFluxH[i] * psiMODERATOR(d_lambdag[i]);
+	}
+      //Modify the weight if the neutron misses For one moderator, it is an easy
+      //window For multiple moderators, we need to set the weight to the initial
+      //value, then add multiples of that to an initially zeroed accumulator
+      if(d_pointsYH[i] > ymax || d_pointsYH[i] < ymin)
+	{
+	  d_weightH[i] = 0.0;
+	}
+    }
+}
+
 
 
 
@@ -868,6 +921,69 @@ static void global_translation(float *d_pointsY, const float distance_m, const i
 	}
     }
 }
+
+
+
+
+__global__
+static void global_roll_phase_space(float *d_hY, float *d_hQ, float *d_hw, float *d_vY, float *d_vQ, float *d_vw, const float theta, const int numElements)
+{
+  // Rotates and mixes the phase space to simulate a rotation of the coordinate system around the beam axis
+  // Once thought to be impossible, now horizontal and vertical phase space is mixed.  FTW
+  
+  int i = blockIdx.x*blockDim.x + threadIdx.x;
+
+  const float thrad = degrees2radians(theta);
+  const float cth = cosf(thrad);
+  const float sth = sinf(thrad);
+  const float c2 = cth*cth;
+  const float s2 = sth*sth;
+
+  float vposp =0.0;
+  float hposp =0.0;
+  
+  float vthp = 0.0;
+  float hthp = 0.0;
+
+  float vwp = 0.0;
+  float hwp = 0.0;
+
+  if(i<numElements)
+    {
+      // Ignore dead neutrons
+      //if(d_weight[i] > DEAD_WEIGHT)
+	{
+	  //Calculate the new positions after the rotation
+	  vposp = d_vY[i] * cth - d_hY[i] * sth;
+	  hposp = d_hY[i] * cth + d_vY[i] * sth;
+
+	  //Calculate the new divergences after the rotation
+	  vthp = d_vQ[i] * cth - d_hQ[i] * sth;
+	  hthp = d_hQ[i] * cth + d_vQ[i] * sth;
+
+	  //Calculate the new weights after the rotation
+	  vwp = d_vw[i] * c2 + d_hw[i] * s2;
+	  hwp = d_hw[i] * c2 + d_vw[i] * s2;
+
+	  //Copy all the results back into the arrays in place
+	  d_vY[i] = vposp;
+	  d_hY[i] = hposp;
+
+	  d_vQ[i] = vthp;
+	  d_hQ[i] = hthp;
+
+	  d_vw[i] = vwp;
+	  d_hw[i] = hwp;
+
+	}
+    }
+}
+
+
+
+
+
+
 
 
 __device__ 
@@ -3191,7 +3307,44 @@ void Sandman::sandILLHCSModerator(void)
 
 
 
+void Sandman::sandPSIModerator(void)
+{
+  ///
+  /// A tool to call a standard moderator kernel providing a triple maxwellian
+  /// moderator matching the ILL horizontal cold source dimensions, based on
+  /// the work of E. Farhi in 2008-2009 to calculate the absolute brightness
+  /// via extrapolation.  This benchmark moderator was used in the NADS work,
+  /// so is a useful cross-check.
+  ///
 
+  sandApertureCUDA(0.3, 0.3);
+  
+   int threadsPerBlock = SANDMAN_CUDA_THREADS;
+   int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
+   if(showCUDAsteps)
+     printf("\tCUDA kernel sandILLHCSModerator with %d blocks of %d threads\n", blocksPerGrid,
+	    threadsPerBlock);
+
+   //Moderator brightness curve
+   if(d_modFlux == NULL)
+     checkCudaErrors(cudaMalloc((void **)&d_modFlux, numElements * sizeof(float)));
+   
+   if(d_modFlux == NULL)
+     {
+       std::cerr << color_red << "ERROR:" << color_reset << " failure to allocate memory for moderator brightness curve" << std::endl;
+       exit(1);
+     }
+
+
+   //global_sandILLHCSModerator(float *d_modFluxH, float *d_weightH, const float *d_lambdag, const float *d_pointsYH, const int numElements)
+    global_sandPSIModerator<<<blocksPerGrid, threadsPerBlock>>>
+      (d_modFlux, d_weightHg, d_lambdag, d_pointsYH, numElements);
+
+    global_sandPSIModerator<<<blocksPerGrid, threadsPerBlock>>>
+      (d_modFlux, d_weightVg, d_lambdag, d_pointsYV, numElements);
+
+
+}
 
 
 
@@ -3428,6 +3581,32 @@ void Sandman::sandTranslationV(const float distance)
   
 }
 
+
+
+
+void Sandman::sandRollPhaseSpace(const float theta)
+{
+  ///
+  /// Calls the CUDA kernel to rotate the beam around its own axis, mixing the phase space in both planes
+  ///
+  /// @param theta rotation angle (degrees)
+  /// 
+
+  int threadsPerBlock = SANDMAN_CUDA_THREADS;
+  int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
+  if(showCUDAsteps)
+    printf("\tCUDA kernel rollPhaseSpace with %d blocks of %d threads\n", blocksPerGrid,
+	   threadsPerBlock);
+   
+
+  //static void global_translation(float *d_pointsY, const float distance_m, const int numElements)
+
+  
+  global_roll_phase_space<<<blocksPerGrid, threadsPerBlock>>>
+    (d_pointsYH, d_pointsThetaH, d_weightHg, d_pointsYV, d_pointsThetaV, d_weightVg, theta, numElements);
+
+
+}
 
 
 
@@ -3942,8 +4121,8 @@ void Sandman::ellipticOpeningGuide(const float length, const float exitWidth, co
   float pieceExitHeight;
   float pieceStartx;
   float pieceEndx;
-  float focalpoint1V, focalpoint2V;
-  float focalpoint1H, focalpoint2H;
+  //float focalpoint1V, focalpoint2V;
+  //float focalpoint1H, focalpoint2H;
   
 	
   const char* filenameH = "hEllipseOpeningProfile.dat";
@@ -4053,8 +4232,8 @@ void Sandman::ellipticClosingGuide(const float length, const float entrWidth, co
 	float pieceExitHeight;
         float pieceStartx;
         float pieceEndx;
-        float focalpoint1V, focalpoint2V;
-	float focalpoint1H, focalpoint2H;
+	//        float focalpoint1V, focalpoint2V;
+	//float focalpoint1H, focalpoint2H;
 
 	
 	const char* filenameH = "hEllipseClosingProfile.dat";
@@ -4148,6 +4327,235 @@ void Sandman::ellipticClosingGuide(const float length, const float entrWidth, co
 }
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+void Sandman::parabolicOpeningGuide(const float length, const float exitWidth, const float exitHeight, const float focalPointH, const float focalPointV, const float mNumber, const int numSections)
+{
+  //Models a focussing parabolic guide by using straight sections
+  //Focal lengths are defined relative to the entrance plane
+  
+  float section_length;
+  float pieceEntrWidth;
+  float pieceExitWidth;
+  float pieceEntrHeight;
+  float pieceExitHeight;
+  float pieceStartx;
+  float pieceEndx;
+  //  float focalpoint1V, focalpoint2V;
+  //float focalpoint1H, focalpoint2H;
+  
+	
+  const char* filenameH = "hParabolaOpeningProfile.dat";
+  const char* filenameV = "vParabolaOpeningProfile.dat";
+  
+  std::cout << color_yellow << "OPENING PARABOLA" << color_reset << std::endl; 
+
+  std::ofstream dataFileH;
+  dataFileH.open(filenameH);
+  
+  if(dataFileH.fail())
+    {
+      std::cerr << "ERROR opening file " << filenameH << std::endl;
+      return;
+    }
+  
+  std::ofstream dataFileV;
+  dataFileV.open(filenameV);
+  
+  if(dataFileV.fail())
+    {
+      std::cerr << "ERROR opening file " << filenameV << std::endl;
+      return;
+    }
+  
+  
+  int i;
+  
+  //Break guide into sections
+  section_length = length / (float) numSections;
+  
+  std::cout << "\tLength " << length << " m and exit width = " << exitWidth  << " m focus H at " << focalPointH  << " and focus V at " << focalPointV << " formed by " << numSections << " sections of " << section_length << " m" << std::endl;
+  
+  //Loop over converging guide approximations printing out the widths
+
+#ifdef DEBUG 
+  std::cout << "\tProfile:" << std::endl;
+  std::cout << "\txpos width" << std::endl;
+#endif
+  
+  for (i = 0; i < numSections; i++) 
+    {
+      pieceStartx = section_length * (float) i;
+      pieceEndx = section_length * (float) (i + 1);
+      
+      //Take JNADS curves and put these into two dimensions	 
+      pieceEntrWidth = 2.0f * parabolic_opening_curve(pieceStartx, length, focalPointH, exitWidth);
+      pieceExitWidth = 2.0f * parabolic_opening_curve(pieceEndx, length, focalPointH, exitWidth);
+#ifdef DEBUG
+      std::cout << "\t" << pieceStartx << "  " << pieceEntrWidth << " H" << std::endl;
+#endif
+      dataFileH << "\t" << pieceStartx << "  " << pieceEntrWidth << std::endl;
+      
+      pieceEntrHeight = 2.0f * parabolic_opening_curve(pieceStartx, length, focalPointV, exitHeight);
+      pieceExitHeight = 2.0f * parabolic_opening_curve(pieceEndx, length, focalPointV, exitHeight);
+#ifdef DEBUG
+      std::cout << "\t" << pieceStartx << "  " << pieceEntrHeight << " V" << std::endl;
+#endif
+      dataFileV << "\t" << pieceStartx << "  " << pieceEntrHeight << std::endl;
+      
+      if (i == (numSections - 1)) 
+	{
+#ifdef DEBUG
+	  std::cout << "\t" << pieceEndx << "  exit " << pieceExitWidth << std::endl;
+	  std::cout << "\t" << pieceEndx << "  exit " << pieceExitHeight << std::endl;
+#endif
+	  dataFileH << "\t" << pieceEndx << "  exit " << pieceExitWidth << std::endl;
+	  dataFileV << "\t" << pieceEndx << "  exit " << pieceExitHeight << std::endl;
+	}
+      
+      sandGuideElementCUDA(
+			   section_length,
+			   pieceEntrWidth,
+			   pieceExitWidth,
+			   0.0f,
+			   mNumber,
+			   mNumber,
+			   pieceEntrHeight,
+			   pieceExitHeight,
+			   0.0f,
+			   mNumber,
+			   mNumber
+			   );
+    }
+  
+  
+  
+  std::cout << "\tParabolic opening guide finished" << std::endl;
+  
+  dataFileH.close();
+  dataFileV.close();
+}
+
+
+
+
+
+
+
+void Sandman::parabolicClosingGuide(const float length, const float entrWidth, const float entrHeight, const float focalPointH, const float focalPointV, const float mNumber, const int numSections)
+{
+        //Models a focussing parabolic guide by using straight sections
+
+        float section_length;
+        float pieceEntrWidth;
+        float pieceExitWidth;
+	float pieceEntrHeight;
+	float pieceExitHeight;
+        float pieceStartx;
+        float pieceEndx;
+	//        float focalpoint1V, focalpoint2V;
+	//float focalpoint1H, focalpoint2H;
+
+	
+	const char* filenameH = "hParabolaClosingProfile.dat";
+	const char* filenameV = "vParabolaClosingProfile.dat";
+
+	std::cout << color_yellow << "CLOSING PARABOLA" << color_reset << std::endl;
+
+	std::ofstream dataFileH;
+	dataFileH.open(filenameH);
+
+	if(dataFileH.fail())
+	  {
+	    std::cerr << "ERROR opening file " << filenameH << std::endl;
+	    return;
+	  }
+	
+	std::ofstream dataFileV;
+	dataFileV.open(filenameV);
+	
+	if(dataFileV.fail())
+	  {
+	    std::cerr << "ERROR opening file " << filenameV << std::endl;
+	    return;
+	  }
+	
+	  
+	int i;
+	  
+	//Break guide into sections
+	section_length = length / (float) numSections;
+
+	std::cout << "\tLength " << length << " m and focus H at " << focalPointH << " " << " and focus V at " << focalPointV << " " << " formed by " << numSections << " sections of m=" << mNumber;
+
+	
+	//Loop over converging guide approximations printing out the widths
+#ifdef DEBUG
+	std::cout << "\tProfile:" << std::endl;
+	std::cout << "\txpos  width" << std::endl;
+#endif
+	
+	for (i = 0; i < numSections; i++) 
+	  {
+	    pieceStartx = section_length * (float) i;
+	    pieceEndx = section_length * (float) (i + 1);
+	    
+	    //Take JNADS curves and put these into two dimensions
+	    pieceEntrWidth = 2.0f * parabolic_closing_curve(pieceStartx, focalPointH, entrWidth);
+	    pieceExitWidth = 2.0f * parabolic_closing_curve(pieceEndx, focalPointH, entrWidth);
+#ifdef DEBUG
+	    std::cout << "\t" << pieceStartx << "  " << pieceEntrWidth << " H" << std::endl;
+#endif
+	    dataFileH << "\t" << pieceStartx << "  " << pieceEntrWidth << std::endl;
+	    
+	    pieceEntrHeight = 2.0f * parabolic_closing_curve(pieceStartx, focalPointV, entrHeight);
+	    pieceExitHeight = 2.0f * parabolic_closing_curve(pieceEndx, focalPointV, entrHeight);
+#ifdef DEBUG
+	    std::cout << "\t" << pieceStartx << "  " << pieceEntrHeight << " V" << std::endl;
+#endif
+	    dataFileV << "\t" << pieceStartx << "  " << pieceEntrHeight << std::endl;
+	    
+	    if (i == numSections - 1) 
+	      {
+#ifdef DEBUG
+		std::cout << "\t" << pieceEndx << "  " << pieceExitWidth << std::endl;
+		std::cout << "\t" << pieceEndx << "  " << pieceExitHeight << std::endl;
+#endif
+		dataFileH << "\t" << pieceEndx << "  " << pieceExitWidth << std::endl;
+		dataFileV << "\t" << pieceEndx << "  " << pieceExitHeight << std::endl;
+	      }
+	    
+	    sandGuideElementCUDA(section_length,
+				 pieceEntrWidth,
+				 pieceExitWidth,
+				 0.0f,
+				 mNumber,
+				 mNumber,
+				 pieceEntrHeight,
+				 pieceExitHeight,
+				 0.0f,
+				 mNumber,
+				 mNumber
+				 );
+	  }
+	
+	
+	
+	std::cout << "\tParabolic closing guide finished" << std::endl;
+	
+	dataFileH.close();
+	dataFileV.close();
+}
 
 
 
