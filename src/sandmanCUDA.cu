@@ -103,8 +103,8 @@ const static float thetaCritNickel=0.099138f;
 #define NICKEL_REFLECTIVITY 0.967f
 
 const static float thetaCritStandardLambda = 1.0f;
-const static int maxElements = 10000000;
-const static float deadWeight = 0.01f;
+const static int maxElements = 100000000;
+const static float deadWeight = 0.001f;
 const static float PI_FLOAT = 3.1415927f;
 
 
@@ -244,6 +244,8 @@ static void global_countNeutrons0(float *numNeutrons, const float *weightH, cons
   //Each thread adds the weight of its neutron to the shared total
   if(i<numElements)
     {
+      //Any pair could actually be multiplied in this step, assuming
+      //no horizontal and vertical correlations
       atomicAdd(&sharedTotal, weightH[i]*weightV[i]);
     }
   
@@ -459,8 +461,14 @@ static void global_countNeutrons(float *numNeutrons, const float *weightH, const
 	  //moderator brightness sampled by that trajectory, and then
 	  //normalised to the full simulation wavelength band and number of
 	  //trajectories
-      	  element = element * deltaLambda * modFlux[i]  / nTraj;
+	  if(nTraj > 0.0)
+	    element = element * deltaLambda * modFlux[i]  / nTraj;
+	  else
+	    element = 0.0;
       	}
+
+      //if(isnan(element))
+      //element = 0.0;
 
       sharedTotal[tid] = element;
 
@@ -503,6 +511,10 @@ static void global_countTrajectories(float *numNeutrons, const float *weightH, c
   if(i<numElements)
     {
       sharedTotal[tid] = weightH[i]*weightV[i];
+
+      //if(isnan(sharedTotal[tid]))
+      //sharedTotal[tid] = 0.0;
+      
       __syncthreads();
       
       
@@ -521,7 +533,9 @@ static void global_countTrajectories(float *numNeutrons, const float *weightH, c
 
 
 
-///Compresses the beam into a single channel of the bender, to model a multi-channel bender by a single channel process (n channels would have n branches otherwise).
+///Compresses the beam into a single virtual channel of the bender, to
+///model a multi-channel bender by a single channel process (n
+///channels would have n branches otherwise).
   
 __global__
 static void global_squeezeBenderChannel(float *ypos, float *channelNumber, const float width, const float channelWidth, const float waferThickness, const int numElements)
@@ -531,12 +545,14 @@ static void global_squeezeBenderChannel(float *ypos, float *channelNumber, const
 
   float relativeY;
 
+  
+
   if(i<numElements)
     {
       relativeY = ypos[i] + width/2.0f;
       //The 'channelWidth' is defined as the empty space plus one
       //wafer thickness
-      //Channel number starts at zero
+      //Which channel does the neutron hit?  Channel number starts at zero
       channelNumber[i] = floorf( relativeY / channelWidth );
       
       //Then we adjust the position to be within a single channel of
@@ -544,6 +560,7 @@ static void global_squeezeBenderChannel(float *ypos, float *channelNumber, const
       ypos[i] = relativeY;
       ypos[i] = ypos[i] / (channelNumber[i]+1.0f);
       ypos[i] = ypos[i] - 0.5f * (channelWidth-waferThickness);
+
     }
 }
 
@@ -554,20 +571,21 @@ static void global_squeezeBenderChannel(float *ypos, float *channelNumber, const
 __global__
 static void global_unSqueezeBenderChannel(float *ypos, const float *channelNumber, const float width, const float channelWidth, const float waferThickness, const int numElements)
 {
-  // Calculates the total emitted neutron current represented by this
-  // trajectory, based on its interception with one moderator surace
-  // characterised by a single temperature temp, width width, positioned with
-  // an offset hoffset, and a brightness num
   
   int i = blockIdx.x*blockDim.x + threadIdx.x;
 
+  //float preY=0.0;
+
   if(i<numElements)
     {
+
+      //float preY = ypos[i];
 
       //Device reverses the position adjustment of sandSqueeze...
       ypos[i] = ypos[i] + 0.5f * (channelWidth - waferThickness);
       ypos[i] = ypos[i] * (channelNumber[i]+1.0f);
       ypos[i] = ypos[i] - width/2.0f;
+
     }
 }
 
@@ -621,6 +639,24 @@ static float maxwellian(const float brightness0, const float tempK, const float 
 	 brightness0*2.0*a*a*exp(-a/(lambda_A*lambda_A))/pow(lambda_A,5.0)
 	 );
 }
+
+
+
+__host__ __device__
+static float psiMODERATOR(const float lambda_A)
+{
+
+  //Defined __host__ __device__ so it can be unit tested if required
+
+  return(
+	 maxwellian(4.035E12f, 103.97f, lambda_A)
+	 +
+	 maxwellian(2.503E12, 25.56f, lambda_A)
+	 +
+	 maxwellian(1.399E13, 298.411f, lambda_A)
+	 );
+}
+
 
 
 
@@ -679,6 +715,44 @@ static void global_sandILLHCSModerator(float *d_modFluxH, float *d_weightH, cons
 
 
 
+
+
+__global__
+static void global_sandPSIModerator(float *d_modFluxH, float *d_weightH, const float *d_lambdag, const float *d_pointsYH, const int numElements)
+{
+  // Calculates the total emitted neutron current represented by this
+  // trajectory, based on its interception with one moderator surace
+  // characterised by a single temperature temp, width width, positioned with
+  // an offset hoffset, and a brightness num
+  
+  float ymax, ymin;
+  
+  ymax = 0.206f/2.0f;
+  ymin = -ymax;
+
+  int i = blockIdx.x*blockDim.x + threadIdx.x;
+
+  if(i < numElements)
+    {
+      //The sample module assigns the scaling factor related to solid angle, now we do moderator brightness
+      if(d_modFluxH[i] < 10.0f)
+	{
+	  //That check means we did not already calculate the flux, so we need to do it now:
+	  d_modFluxH[i] = d_modFluxH[i] * psiMODERATOR(d_lambdag[i]);
+	}
+      //Modify the weight if the neutron misses For one moderator, it is an easy
+      //window For multiple moderators, we need to set the weight to the initial
+      //value, then add multiples of that to an initially zeroed accumulator
+      if(d_pointsYH[i] > ymax || d_pointsYH[i] < ymin)
+	{
+	  d_weightH[i] = 0.0;
+	}
+    }
+}
+
+
+
+
   
 __global__
 static void global_sandModerator1(float *d_modFluxH, float *d_weightH, const float *d_lambdag, const float *d_pointsYH, const int numElements, const float width, const float hoffset, const float temp, const float num)
@@ -710,6 +784,29 @@ static void global_sandModerator1(float *d_modFluxH, float *d_weightH, const flo
       d_weightH[i] = 0.0;
     }
 
+}
+
+
+
+__global__
+static void global_sandBrillianceTransferModerator(float *d_modFluxH, float *d_weightH, const float *d_lambdag, const float *d_pointsYH, const int numElements, const float width, const float hoffset)
+{
+  // Simple brilliance transfer moderator
+  
+  float ymax, ymin;
+  
+  ymax = hoffset + width/2.0;
+  ymin = hoffset - width/2.0;
+
+  int i = blockIdx.x*blockDim.x + threadIdx.x;
+  
+  //Modify the weight if the neutron misses 
+  if(d_pointsYH[i] > ymax || d_pointsYH[i] < ymin)
+    {
+      d_weightH[i] = 0.0;
+    }
+
+  d_modFluxH[i] = 1.0;
 }
 
 
@@ -826,6 +923,69 @@ static void global_translation(float *d_pointsY, const float distance_m, const i
 }
 
 
+
+
+__global__
+static void global_roll_phase_space(float *d_hY, float *d_hQ, float *d_hw, float *d_vY, float *d_vQ, float *d_vw, const float theta, const int numElements)
+{
+  // Rotates and mixes the phase space to simulate a rotation of the coordinate system around the beam axis
+  // Once thought to be impossible, now horizontal and vertical phase space is mixed.  FTW
+  
+  int i = blockIdx.x*blockDim.x + threadIdx.x;
+
+  const float thrad = degrees2radians(theta);
+  const float cth = cosf(thrad);
+  const float sth = sinf(thrad);
+  const float c2 = cth*cth;
+  const float s2 = sth*sth;
+
+  float vposp =0.0;
+  float hposp =0.0;
+  
+  float vthp = 0.0;
+  float hthp = 0.0;
+
+  float vwp = 0.0;
+  float hwp = 0.0;
+
+  if(i<numElements)
+    {
+      // Ignore dead neutrons
+      //if(d_weight[i] > DEAD_WEIGHT)
+	{
+	  //Calculate the new positions after the rotation
+	  vposp = d_vY[i] * cth - d_hY[i] * sth;
+	  hposp = d_hY[i] * cth + d_vY[i] * sth;
+
+	  //Calculate the new divergences after the rotation
+	  vthp = d_vQ[i] * cth - d_hQ[i] * sth;
+	  hthp = d_hQ[i] * cth + d_vQ[i] * sth;
+
+	  //Calculate the new weights after the rotation
+	  vwp = d_vw[i] * c2 + d_hw[i] * s2;
+	  hwp = d_hw[i] * c2 + d_vw[i] * s2;
+
+	  //Copy all the results back into the arrays in place
+	  d_vY[i] = vposp;
+	  d_hY[i] = hposp;
+
+	  d_vQ[i] = vthp;
+	  d_hQ[i] = hthp;
+
+	  d_vw[i] = vwp;
+	  d_hw[i] = hwp;
+
+	}
+    }
+}
+
+
+
+
+
+
+
+
 __device__ 
 inline static float low_pass_filter(const float value, const float cutOff)
 {
@@ -885,6 +1045,11 @@ static void global_aperture(float *d_weight, const float *d_pointsY, const float
 	  
 	  //Filter off higher points
 	  d_weight[i] = d_weight[i] * low_pass_filter(d_pointsY[i], upper_position);
+
+	  //	  if(isnan(d_weight[i]))
+	  //{
+	  //  printf("NaN encountered.  d_pointsY[i] = %f, lower_pos=%f, upper_pos=%f\n", d_pointsY[i], lower_position, upper_position);
+	  //}
 	}
     }
 }
@@ -933,12 +1098,12 @@ float device_reflectivity_slow(const float theta_rads,	/**< Angle of incidence i
 	float attnGrad;
 	float ans;
 	
-	if(dist <= thetaCritM1)
+	if(dist < thetaCritM1)
 	{
 	  //Flat at low angles below m=1
 	  ans = device_criticalReflectivity(1.0);
        	}	
-	else if(dist <= thetaCrit)
+	else if(dist < thetaCrit)
 	{
 	  //linear decay to the knee value above m=1
 	  attnGrad = (device_criticalReflectivity(mValue) - device_criticalReflectivity(1.0)) / (thetaCrit - thetaCritM1);
@@ -1030,11 +1195,6 @@ static void global_lambdaMonitor(float *lambdaHist, const float lambdaMin, const
 
   float element;
 
-
-  //Try doing this one neutron per thread, for fun - and simpler code ;)
-
-  // THIS IS SLOW, we need a faster way
-
   //Boss thread zeros the shared counter
   if(tid == 0)
     {
@@ -1049,30 +1209,30 @@ static void global_lambdaMonitor(float *lambdaHist, const float lambdaMin, const
   //Each thread adds the weight of its neutron to the shared total
   if(i<numElements)
     {
-      //Add horizontal bit
       //targetBin = (int) roundf(-0.5f + (lambda[i] - lambdaMin)/dLambda  );
-      targetBin = (int) rintf(-0.5f + (lambda[i] - lambdaMin)/dLambda  );
+      //targetBin = (int) rintf(-0.5f + (lambda[i] - lambdaMin)/dLambda  );
+      targetBin = (int) rintf((lambda[i] - lambdaMin)/dLambda);
       
       //This function agrees with VITESS "normalise with binsize = no"
       //be certain to send non-zero dLambda to this function!
       element = weightH[i] * weightV[i] / dLambda; // in units of fractions of neutrons per angstrom
 
       //Normalise to wavelength range
-      element = element * sourceDeltaLambda; //in units of fractions of neutrons 
+      element = element * sourceDeltaLambda; //in units of fractions of neutrons
 
       if(d_modflux != NULL)
 	{
 	  element = element * d_modflux[i] / (float)numElements;
 	}
 
+      //if(isnan(element))
+      //element = 0.0;
 
-      if( (targetBin > 0) && (targetBin < 100) && (targetBin < histSize) )
+      if( (targetBin >= 0) && (targetBin < 100) && (targetBin < histSize) )
 	{
 	  atomicAdd(&sharedLambdaHist[targetBin], element);
 	}
-      // //Add vertical bit
-      // targetBin = roundf( (lambdaV[i] - lambdaMin)/dLambda );
-      // atomicAdd(&sharedLambdaHist[targetBin], weightV[i]);
+
     }
   
   __syncthreads();
@@ -1262,7 +1422,7 @@ static void global_Monitor1D(float *globalHist, const float min, const float dva
 
 
 __global__
-static void global_rebinnedPhaseSpaceH(float globalHist[100][100], const float *d_pointsY, const float *d_pointsTheta, const float yMin, const float dy, const float thetaMin, const float dtheta, int histSize, const float *d_weight, const int numElements)
+static void global_rebinnedPhaseSpace(float globalHist[100][100], const float *d_pointsY, const float *d_pointsTheta, const float yMin, const float dy, const float thetaMin, const float dtheta, int histSize, const float *d_weight, const int numElements)
 {
 
   int targetBinY, targetBinTheta;
@@ -1281,14 +1441,12 @@ static void global_rebinnedPhaseSpaceH(float globalHist[100][100], const float *
 	{
 	  if(targetBinTheta >= 0 && targetBinTheta < 100 && targetBinTheta < histSize)
 	    {
-	      atomicAdd(&globalHist[targetBinTheta][targetBinY], d_weight[i]); 
+	      //if(!isnan(d_weight[i]))
+		atomicAdd(&globalHist[targetBinTheta][targetBinY], d_weight[i]); 
 	    }
 	}
     }
 }
-
-
-
 
 
 
@@ -1316,49 +1474,47 @@ static void global_sandReflection(float *d_pointsY, float *d_pointsTheta, const 
   // reflected.  It might be the same speed, but I think this way is faster,
   // particularly with CUDA.
 
-    /* This bit either goes to openMP or CUDA */
+  /* This bit either goes to openMP or CUDA */
 
   if(i<numElements)
     {
-      // Ignore dead neutrons
-      if(d_weight[i] > deadWeight)
-      	{
-	  do
+      // Don't try to ignore dead neutrons here - it creates NaNs in d_pointsY[i]
+      //if(d_weight[i] > deadWeight)
+      //{
+      do
+	{
+	  finished=true;
+	      
+	  /* Reflect in the upper plane? */
+	  if(d_pointsY[i] > mirrorYtop)
 	    {
-	      finished=true;
-	      
-	      
-	      /* Reflect in the upper plane? */
-	      if(d_pointsY[i] > mirrorYtop)
-		{
-		  mval = mTop;
-		  mirrorAngle = mirrorAngleTop;
-		  mirrorY = mirrorYtop;
-		  finished = false;
-		}
-	      
-	      /* Are we in the lower plane? */
-	      if(d_pointsY[i] < mirrorYbottom)
-		{
-		  mval = mBottom;
-		  mirrorAngle = mirrorAngleBottom;
-		  mirrorY = mirrorYbottom;
-		  finished = false;
-		}
-
-	      /* Do we need to do slow work? */
-	      if(finished == false)
-		{
-		  d_weight[i] = device_attenuate_alpha(d_weight[i], d_lambda[i], fabsf(d_pointsTheta[i] - mirrorAngle), mval);
-		  d_pointsTheta[i] = 2.0*mirrorAngle - d_pointsTheta[i];
-		  
-		  /* reflection in Y */
-		  /* pointsY[i] = mirrorY - (pointsY[i] - mirrorY); */
-		  d_pointsY[i] = 2.0*mirrorY - d_pointsY[i];
-		}
+	      mval = mTop;
+	      mirrorAngle = mirrorAngleTop;
+	      mirrorY = mirrorYtop;
+	      finished = false;
 	    }
-	  while (finished == false);
-	  }  
+	      
+	  /* Are we in the lower plane? */
+	  if(d_pointsY[i] < mirrorYbottom)
+	    {
+	      mval = mBottom;
+	      mirrorAngle = mirrorAngleBottom;
+	      mirrorY = mirrorYbottom;
+	      finished = false;
+	    }
+
+	  /* Do we need to do slow work? */
+	  if(finished == false)
+	    {
+	      d_weight[i] = device_attenuate_alpha(d_weight[i], d_lambda[i], fabsf(d_pointsTheta[i] - mirrorAngle), mval);
+	      d_pointsTheta[i] = 2.0*mirrorAngle - d_pointsTheta[i];
+		  
+	      /* reflection in Y */
+	      /* pointsY[i] = mirrorY - (pointsY[i] - mirrorY); */
+	      d_pointsY[i] = 2.0*mirrorY - d_pointsY[i];
+	    }	      
+	}
+      while (finished == false);
     }
 }
 
@@ -1552,10 +1708,20 @@ Sandman::~Sandman(void)
 
   if(d_pointsThetaHsnapshot != NULL && d_pointsYHsnapshot != NULL)
     {
+      
       executePhaseSpaceMapH();
 
       checkCudaErrors(cudaFree(d_pointsThetaHsnapshot));
       checkCudaErrors(cudaFree(d_pointsYHsnapshot));
+    }
+
+  if(d_pointsThetaVsnapshot != NULL && d_pointsYVsnapshot != NULL)
+    {
+      
+      executePhaseSpaceMapV();
+
+      checkCudaErrors(cudaFree(d_pointsThetaVsnapshot));
+      checkCudaErrors(cudaFree(d_pointsYVsnapshot));
     }
 
 
@@ -2102,14 +2268,70 @@ void Sandman::phaseSpaceMapH(const char *filename, const float ymin, const float
   //Snapshot positive Y
   global_copyArray<<<blocksPerGrid, threadsPerBlock>>>
     (d_pointsYH, d_pointsYHsnapshot, numElements, false);
+
   
 }
 
 
 
 
+void Sandman::phaseSpaceMapV(const char *filename, const float ymin, const float ymax, const float thetaMin, const float thetaMax)
+{
+  //Create snapshots  
+  strcpy(filenameSnapshot, filename);
+  yminSnapshot = ymin;
+  ymaxSnapshot = ymax;
+  thetaMinSnapshot = thetaMin;
+  thetaMaxSnapshot = thetaMax;
+  
+  
+  if( d_pointsThetaVsnapshot != NULL ||
+      d_pointsYVsnapshot != NULL )
+    {
+      std::cout << color_red << "ERROR:" << color_reset << " only one type of 2D beam monitor snapshot can be created" << std::endl;
+      exit(1);
+    }
+  
+  checkCudaErrors(cudaMalloc((void **)&d_pointsThetaVsnapshot, numElements*sizeof(float)));
+  
+  if(d_pointsThetaVsnapshot == NULL)
+    {
+      std::cerr << color_red << "ERROR:" << color_reset << " failed to allocate device memory in setupPhaseSpaceMapV for theta" << std::endl;
+      exit(1);
+    }
+  
+  checkCudaErrors(cudaMalloc((void **)&d_pointsYVsnapshot, numElements*sizeof(float)));
+  
+  if(d_pointsYVsnapshot == NULL)
+    {
+      std::cerr << color_red << "ERROR:" << color_reset << " failed to allocate device memory in setupPhaseSpaceMapV for Y" << std::endl;
+      exit(1);
+    }
+
+  if(d_pointsYH == NULL || d_pointsThetaH == NULL)
+    {
+      std::cerr << "OMG: Trying to copy from an unallocated array" << std::endl;
+      exit(1);
+    }
+
+  //If we get here, then the memory was allocated just fine.
+  
+  int threadsPerBlock = SANDMAN_CUDA_THREADS;
+  int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
+  if(showCUDAsteps)
+    std::cout << "\tCUDA kernel copyArray for phaseSpaceMapV with " << blocksPerGrid << " blocks of " << threadsPerBlock << " threads" << std::endl;
+ 
+
+  //Snapshot negative theta
+  global_copyArray<<<blocksPerGrid, threadsPerBlock>>>
+    (d_pointsThetaV, d_pointsThetaVsnapshot, numElements, true);
 
 
+  //Snapshot positive Y
+  global_copyArray<<<blocksPerGrid, threadsPerBlock>>>
+    (d_pointsYV, d_pointsYVsnapshot, numElements, false);
+  
+}
 
 
 
@@ -2181,13 +2403,13 @@ void Sandman::executePhaseSpaceMapH(void)
   
   int threadsPerBlock = SANDMAN_CUDA_THREADS;
   int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
-  std::cout << "\tCUDA kernel rebinnedPhaseSpaceH with " << blocksPerGrid << " blocks of " << threadsPerBlock << " threads" << std::endl;
+  std::cout << "\tCUDA kernel rebinnedPhaseSpace with " << blocksPerGrid << " blocks of " << threadsPerBlock << " threads" << std::endl;
   
   
   
   //void global_rebinnedPhaseSpaceH(float globalHist[100][100], const float *d_pointsY, const float *d_pointsTheta, const float yMin, const float dy, const float thetaMin, const float dtheta, int histSize, const float *d_weight, const int numElements)
   
-  global_rebinnedPhaseSpaceH<<<blocksPerGrid, threadsPerBlock>>>
+  global_rebinnedPhaseSpace<<<blocksPerGrid, threadsPerBlock>>>
     ((float (*)[100])d_histogram2D, d_pointsYHsnapshot, d_pointsThetaHsnapshot, yminSnapshot, dy, thetaMinSnapshot, dtheta, 100, d_weightHg, numElements);
   
   
@@ -2241,8 +2463,129 @@ void Sandman::executePhaseSpaceMapH(void)
 }
 
 
-
-
+void Sandman::executePhaseSpaceMapV(void)
+{
+  ///
+  /// Computes a full phase space map in the vertical plane
+  /// 
+  /// @param filename pointer to const char name of file to use for output of
+  /// the histogram.  
+  ///
+  /// @param ymin the minimum position value to use (m)
+  /// 
+  /// @param ymax the maximum position value to use (m)
+  ///
+  /// @param thetaMin  the minimum divergence value to use (radians)
+  ///
+  /// @param thetaMax the maximum divergence value to use (radians)
+  ///
+  
+  float *h_histogram=NULL;
+  float *d_boundary=NULL;
+  
+  float runningY = yminSnapshot;
+  float runningTheta = thetaMinSnapshot;
+  float dy = fabs(ymaxSnapshot-yminSnapshot)/100.0f;
+  float dtheta = fabs(thetaMaxSnapshot - thetaMinSnapshot)/100.0f;
+  
+  std::cout << color_yellow << "HORIZONTAL ACCEPTANCE DIAGRAM CONSTRUCTION" << color_reset << std::endl;
+  
+  h_histogram = (float*) malloc(100*100*sizeof(float));
+  
+  if(h_histogram == NULL)
+    {
+      std::cerr << "Error allocating host memory in phaseSpaceMapV" << std::endl;
+      exit(1);
+    }
+  
+  std::ofstream dataFile;
+  int i,j;
+  
+  // Allocate device float for min, max etc
+  checkCudaErrors(cudaMalloc((void **)&d_boundary, sizeof(float)));
+  if(d_boundary == NULL)
+    {
+      std::cerr << "Error allocating device memory in phaseSpaceMapV for d_boundary" << std::endl;
+      exit(1);
+    }
+  
+  
+  
+  
+   // Zero the count histogram
+  zeroHistogram2D();
+  
+  
+#ifdef DEBUG
+  cudaError_t errSync  = cudaGetLastError();
+  cudaError_t errAsync = cudaDeviceSynchronize();
+  if (errSync != cudaSuccess) 
+    std::cout << "Sync kernel error: " << cudaGetErrorString(errSync) << std::endl;
+  if (errAsync != cudaSuccess)
+    std::cout << "Async kernel error: " << cudaGetErrorString(errAsync) << std::endl;
+#endif
+  
+  
+  int threadsPerBlock = SANDMAN_CUDA_THREADS;
+  int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
+  std::cout << "\tCUDA kernel rebinnedPhaseSpaceV with " << blocksPerGrid << " blocks of " << threadsPerBlock << " threads" << std::endl;
+  
+  
+  
+  //void global_rebinnedPhaseSpaceH(float globalHist[100][100], const float *d_pointsY, const float *d_pointsTheta, const float yMin, const float dy, const float thetaMin, const float dtheta, int histSize, const float *d_weight, const int numElements)
+  
+  global_rebinnedPhaseSpace<<<blocksPerGrid, threadsPerBlock>>>
+    ((float (*)[100])d_histogram2D, d_pointsYVsnapshot, d_pointsThetaVsnapshot, yminSnapshot, dy, thetaMinSnapshot, dtheta, 100, d_weightVg, numElements);
+  
+  
+#ifdef DEBUG
+  if (errSync != cudaSuccess) 
+    std::cout << "Sync kernel error: " << cudaGetErrorString(errSync) << std::endl;
+  if (errAsync != cudaSuccess)
+    std::cout << "Async kernel error: " << cudaGetErrorString(errAsync) << std::endl;
+#endif
+  
+  
+  
+  
+  
+  //Get data from GPU
+  
+  checkCudaErrors(cudaMemcpy(h_histogram, d_histogram2D, 100*100 * sizeof(float), cudaMemcpyDeviceToHost));
+  
+  
+  
+  
+  
+  dataFile.open(filenameSnapshot);
+  
+  if(!dataFile.good())
+    {
+      std::cerr << "ERROR opening " << filenameSnapshot << " for writing" << std::endl;
+      return;
+    }
+  else
+    std::cout << "\tWriting 2D monitor file " << filenameSnapshot << std::endl;
+  
+  
+  for(i=0; i<100; i++)
+    {
+      for(j=0; j<100; j++)
+	{
+	  runningTheta = thetaMinSnapshot + dtheta * (float) j;
+	  runningY = yminSnapshot + dy * (float) i;
+	  //[theta][y]
+	  dataFile << runningTheta << " " << runningY << "  " << h_histogram[j*100+i] << std::endl;
+	}
+    }
+  
+  dataFile.close();
+  
+  free(h_histogram);
+  
+  if(d_boundary != NULL)
+    checkCudaErrors(cudaFree(d_boundary));
+}
 
 
 
@@ -2730,6 +3073,54 @@ void Sandman::sandCollimateCUDA(const float divergenceH, const float divergenceV
 }
 
 
+void Sandman::sandApertureV(const float window_height)
+{
+  ///
+  /// Calls the CUDA kernels to compute an aperture operation, setting the
+  /// weight to zero on trajectories falling outside the position window
+  /// requested.
+  ///
+  /// @param window_height the full height of the window in metres.
+  ///
+  
+   int threadsPerBlock = SANDMAN_CUDA_THREADS;
+   int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
+   if(showCUDAsteps)
+     printf("\tCUDA kernel aperture of height %f with %d blocks of %d threads\n", window_height, blocksPerGrid,
+	    threadsPerBlock);
+
+   // void global_collimation(float *d_weight, const float *d_pointsTheta, const float lower_angle, const float upper_angle, const int numElements)
+
+    global_aperture<<<blocksPerGrid, threadsPerBlock>>>
+      (d_weightVg, d_pointsYV, -fabs(window_height/2.0f), fabs(window_height/2.0f), numElements);
+}
+
+
+void Sandman::sandApertureH(const float window_width)
+{
+  ///
+  /// Calls the CUDA kernels to compute an aperture operation, setting the
+  /// weight to zero on trajectories falling outside the position window
+  /// requested.
+  ///
+  /// @param window_width the full width of the window in metres.
+  ///
+  
+   int threadsPerBlock = SANDMAN_CUDA_THREADS;
+   int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
+   if(showCUDAsteps)
+     printf("\tCUDA kernel aperture of width %f with %d blocks of %d threads\n", window_width, blocksPerGrid,
+	    threadsPerBlock);
+
+   // void global_collimation(float *d_weight, const float *d_pointsTheta, const float lower_angle, const float upper_angle, const int numElements)
+
+
+    global_aperture<<<blocksPerGrid, threadsPerBlock>>>
+      (d_weightHg, d_pointsYH, -fabs(window_width/2.0f), fabs(window_width/2.0f), numElements);
+}
+
+
+
 
 
 void Sandman::sandApertureCUDA(const float window_width, const float window_height)
@@ -2825,6 +3216,54 @@ void Sandman::sandModerator(const float width,
 
 
 
+void Sandman::sandBrillianceTransferModerator(const float width,
+					      const float height,
+					      const float hoffset,
+					      const float voffset)
+{
+
+  ///
+  /// Calls the CUDA kernels to compute a single moderator window,
+  /// which sets the weight to zero on trajectories falling outside
+  /// the position window requested, and otherwise scores the neutron
+  /// at its transmission weight.
+  ///
+  /// @param width the width of the moderator in metres
+  ///
+  /// @param height the height of the moderator in metres
+  /// 
+  /// @param hoffset the perpendicular horizontal offset of the moderator
+  /// (left is positive, imagined from a view top down with the moderator at
+  /// the bottom and the sample at the top, relative to the beam axis centre
+  /// at the guide entrance.
+  ///
+  /// @param voffset the perpendicular vertical offset of the moderator (up is
+  /// positive, imagined from a side view with the moderator on the left and
+  /// the sample to the right, relative to the beam axis centre at the guide
+  /// entrance.
+  ///
+  
+
+
+   int threadsPerBlock = SANDMAN_CUDA_THREADS;
+   int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
+   if(showCUDAsteps)
+     printf("\tCUDA kernel sandBrillianceTransferModerator of width %f and height %f with %d blocks of %d threads\n", width, height, blocksPerGrid,
+	    threadsPerBlock);
+
+   
+   
+   //static void global_sandModerator1(float *d_modFluxH, float *d_weightH, const float *d_lambdag, const float *d_pointsYH, const int numElements, const float width, const float hoffset, const float temp, const float num)
+
+    global_sandBrillianceTransferModerator<<<blocksPerGrid, threadsPerBlock>>>
+      (d_modFlux, d_weightHg, d_lambdag, d_pointsYH, numElements, width, hoffset);
+
+    global_sandBrillianceTransferModerator<<<blocksPerGrid, threadsPerBlock>>>
+      (d_modFlux, d_weightVg, d_lambdag, d_pointsYV, numElements, width, hoffset);
+
+}
+
+
 
 
 void Sandman::sandILLHCSModerator(void)
@@ -2868,8 +3307,44 @@ void Sandman::sandILLHCSModerator(void)
 
 
 
+void Sandman::sandPSIModerator(void)
+{
+  ///
+  /// A tool to call a standard moderator kernel providing a triple maxwellian
+  /// moderator matching the ILL horizontal cold source dimensions, based on
+  /// the work of E. Farhi in 2008-2009 to calculate the absolute brightness
+  /// via extrapolation.  This benchmark moderator was used in the NADS work,
+  /// so is a useful cross-check.
+  ///
+
+  sandApertureCUDA(0.3, 0.3);
+  
+   int threadsPerBlock = SANDMAN_CUDA_THREADS;
+   int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
+   if(showCUDAsteps)
+     printf("\tCUDA kernel sandILLHCSModerator with %d blocks of %d threads\n", blocksPerGrid,
+	    threadsPerBlock);
+
+   //Moderator brightness curve
+   if(d_modFlux == NULL)
+     checkCudaErrors(cudaMalloc((void **)&d_modFlux, numElements * sizeof(float)));
+   
+   if(d_modFlux == NULL)
+     {
+       std::cerr << color_red << "ERROR:" << color_reset << " failure to allocate memory for moderator brightness curve" << std::endl;
+       exit(1);
+     }
 
 
+   //global_sandILLHCSModerator(float *d_modFluxH, float *d_weightH, const float *d_lambdag, const float *d_pointsYH, const int numElements)
+    global_sandPSIModerator<<<blocksPerGrid, threadsPerBlock>>>
+      (d_modFlux, d_weightHg, d_lambdag, d_pointsYH, numElements);
+
+    global_sandPSIModerator<<<blocksPerGrid, threadsPerBlock>>>
+      (d_modFlux, d_weightVg, d_lambdag, d_pointsYV, numElements);
+
+
+}
 
 
 
@@ -3030,6 +3505,31 @@ void Sandman::sandRotationH(const float angleH)
 }
 
 
+void Sandman::sandRotationV(const float angleV)
+{
+  ///
+  /// Calls the CUDA kernel to shift the vertical phase space in the theta plane (rotation of beam)
+  ///
+  /// @param angleV vertical angle of beam rotation (radians)
+  /// 
+  /// \todo Check in NADS and document the positive / negative axes of this function.
+  ///
+
+  int threadsPerBlock = SANDMAN_CUDA_THREADS;
+  int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
+  if(showCUDAsteps)
+    printf("\tCUDA kernel rotationV with %d blocks of %d threads\n", blocksPerGrid,
+	   threadsPerBlock);
+   
+  //static void global_rotation(float *d_pointsTheta, const float angle_radians, const int numElements)
+  
+  
+  global_rotation<<<blocksPerGrid, threadsPerBlock>>>
+    (d_pointsThetaV, angleV, numElements);
+  
+}
+
+
 
 
 void Sandman::sandTranslationH(const float distance)
@@ -3081,6 +3581,32 @@ void Sandman::sandTranslationV(const float distance)
   
 }
 
+
+
+
+void Sandman::sandRollPhaseSpace(const float theta)
+{
+  ///
+  /// Calls the CUDA kernel to rotate the beam around its own axis, mixing the phase space in both planes
+  ///
+  /// @param theta rotation angle (degrees)
+  /// 
+
+  int threadsPerBlock = SANDMAN_CUDA_THREADS;
+  int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
+  if(showCUDAsteps)
+    printf("\tCUDA kernel rollPhaseSpace with %d blocks of %d threads\n", blocksPerGrid,
+	   threadsPerBlock);
+   
+
+  //static void global_translation(float *d_pointsY, const float distance_m, const int numElements)
+
+  
+  global_roll_phase_space<<<blocksPerGrid, threadsPerBlock>>>
+    (d_pointsYH, d_pointsThetaH, d_weightHg, d_pointsYV, d_pointsThetaV, d_weightVg, theta, numElements);
+
+
+}
 
 
 
@@ -3223,6 +3749,14 @@ void Sandman::sandSimpleStraightGuide(
   //Before we do anything else, kill neutrons missing the entrance of the guide.
   sandApertureCUDA(width, height);
 
+  std::cout << color_yellow << "STRAIGHT GUIDE" << color_reset << std::endl;
+
+  std::cout << "\twidth  = " << width << std::endl;
+  std::cout << "\theight = " << height << std::endl;
+  std::cout << "\tlength = " << length << std::endl;
+  std::cout << "\t     m = " << mval << std::endl;
+  
+  
   sandGuideElementCUDA(length,
 		       width,
 		       width,
@@ -3234,8 +3768,66 @@ void Sandman::sandSimpleStraightGuide(
 		       0.0,
 		       mval,
 		       mval);
+
+  std::cout << "\tStraight guide finished" << std::endl;
 }
 
+void Sandman::sandTaperedStraightGuide(
+		       const float length,
+		       const float entranceWidth,
+		       const float entranceHeight,
+		       const float exitWidth,
+		       const float exitHeight,
+		       const float mval
+				      )
+{
+
+  ///
+  /// A simple utility function for a straight guide of linearly changing cross section
+  /// and a single m value
+  ///
+  /// @param length length of guide in metres
+  /// 
+  /// @param entranceWidth width of the entrance of the guide in metres
+  ///
+  /// @param entranceHeight height of the entrance of the guide in metres
+  ///
+  /// @param exitWidth width of the exit of the guide in metres
+  ///
+  /// @param exitHeight height of the exit of the guide in metres
+  ///
+  /// @param mval the supermirror m value of all surfaces
+  ///
+
+
+  //Before we do anything else, kill neutrons missing the entrance of the guide.
+  sandApertureCUDA(entranceWidth, entranceHeight);
+
+  std::cout << color_yellow << "STRAIGHT TAPERED GUIDE" << color_reset << std::endl;
+
+  std::cout << "\tentrance width  = " << entranceWidth << std::endl;
+  std::cout << "\tentrance height = " << entranceHeight << std::endl;
+  std::cout << "\t     exit width = " << exitWidth << std::endl;
+  std::cout << "\t    exit height = " << exitHeight << std::endl;
+  std::cout << "\t         length = " << length << std::endl;
+  std::cout << "\t              m = " << mval << std::endl;
+  
+
+  
+  sandGuideElementCUDA(length,
+		       entranceWidth,
+		       exitWidth,
+		       0.0,
+		       mval,
+		       mval,
+		       entranceHeight,
+		       exitHeight,
+		       0.0,
+		       mval,
+		       mval);
+
+  std::cout << "\tStraight guide finished" << std::endl;
+}
 
 
 void Sandman::sandCurvedGuide(
@@ -3271,7 +3863,8 @@ void Sandman::sandCurvedGuide(
   //Before we do anything else, kill neutrons missing the entrance of the guide.
   sandApertureCUDA(width, height);
 
-  std::cout << color_yellow << "CURVED GUIDE CHANNEL" << color_reset << std::endl; 
+  std::cout << color_yellow << "CURVED GUIDE CHANNEL" << color_reset << std::endl;
+  std::cout << "\tradius " << radius << " width " << width << " length " << length << " sectionLength " << sectionLength << std::endl; 
 
   if(radius != 0.0)
     {
@@ -3368,11 +3961,149 @@ void Sandman::sandCurvedGuide(
 		}
 		
 		std::cout << "\tcurved guide channel finished" << std::endl;
-		
-
     }
-
 }
+
+
+
+void Sandman::sandVerticallyCurvedGuide(
+		       const float length,
+		       const float sectionLength,
+		       const float width,
+		       const float height,
+		       const float mval,
+		       const float radius
+			      )
+  {
+
+  ///
+  /// A simple utility function for a curved guide of constant cross section
+  /// and a single m value
+  ///
+  /// @param length length of guide in metres
+  /// 
+  /// @param sectionLength length of guide sections in metres (typically 0.5,
+  /// 1, or 2 metres in practice)
+  ///
+  /// @param width width of guide in metres
+  ///
+  /// @param height height of guide in metres
+  ///
+  /// @param mval the supermirror m value of all surfaces
+  ///
+  /// @param radius the radius of curvature of the guide in metres
+  ///
+
+  int i=0;
+
+  //Before we do anything else, kill neutrons missing the entrance of the guide.
+  sandApertureCUDA(width, height);
+
+  std::cout << color_yellow << "VERTICALLY CURVED GUIDE CHANNEL" << color_reset << std::endl; 
+
+  if(radius != 0.0)
+    {
+      //Break into sections
+      int numSections = (int) round(length / sectionLength);
+      float sectionAngle;
+
+      //Special case - one section.  
+      //This is two tweaks of rotation surrounding a short, straight guide piece 
+      //the piece plane at the centre lies along the tangent of the curve at that point
+      if(2.0*sectionLength > length)
+	{
+	  sectionAngle = asin(0.5*length / radius);
+			
+			
+	  std::cout << "\tsection " << i+1 << " ";
+	  sandRotationH(sectionAngle);
+	  
+	  //sandSimpleStraightGuide(length, width, height, mval);
+	  sandGuideElementCUDA(length,
+		       width,
+		       width,
+		       0.0,
+		       mval,
+		       mval,
+		       height,
+		       height,
+		       0.0,
+		       mval,
+		       mval);
+	  
+	  sandRotationV(sectionAngle);
+	  
+	  std::cout << "\tCurved guide channel finished" << std::endl;
+	  
+	  return;
+	  
+
+
+	}
+
+
+      //Otherwise we do normal curved guide
+      sectionAngle = 2.0*asin(0.5*sectionLength / radius);
+
+      //Normal case, many sections of finite length
+		for(i=0; i<numSections; i++)
+		{
+			if(i != numSections-1)	//if we are not doing the last iteration so do a normal straight guide plus rotation
+			{
+			       
+				//sandSimpleStraightGuide(sectionLength, width, height, mval);
+				sandGuideElementCUDA(sectionLength,
+						     width,
+						     width,
+						     0.0,
+						     mval,
+						     mval,
+						     height,
+						     height,
+						     0.0,
+						     mval,
+						     mval);
+				
+				std::cout << "\tsection " << i+1 << std::endl;
+				sandRotationV(sectionAngle);
+			}
+			
+			else	//This is the last section, so take care with the length if it's not an integer multiple of sections
+					//also, there is no rotation.  The next module axis is aligned with this last piece, just as the 
+					//entrance is aligned with the previous axis
+			{
+				float lastPiece = length - (float)i * sectionLength;
+
+				if(lastPiece <= 0.0)	//i don't think that this can happen, but never mind
+					break;
+				
+				std::cout << "\tsection " << i+1 << std::endl;
+				//sandSimpleStraightGuide(lastPiece, width, height, mval);
+				sandGuideElementCUDA(lastPiece,
+						     width,
+						     width,
+						     0.0,
+						     mval,
+						     mval,
+						     height,
+						     height,
+						     0.0,
+						     mval,
+						     mval);
+				
+			}	
+
+		}
+		
+		std::cout << "\tvertically curved guide channel finished" << std::endl;
+    }
+}
+
+
+
+
+
+
 
 
 
@@ -3390,8 +4121,8 @@ void Sandman::ellipticOpeningGuide(const float length, const float exitWidth, co
   float pieceExitHeight;
   float pieceStartx;
   float pieceEndx;
-  float focalpoint1V, focalpoint2V;
-  float focalpoint1H, focalpoint2H;
+  //float focalpoint1V, focalpoint2V;
+  //float focalpoint1H, focalpoint2H;
   
 	
   const char* filenameH = "hEllipseOpeningProfile.dat";
@@ -3441,7 +4172,7 @@ void Sandman::ellipticOpeningGuide(const float length, const float exitWidth, co
       pieceEntrWidth = 2.0f * elliptic_curve(pieceStartx, focalPoint1H, focalPoint2H, exitWidth);
       pieceExitWidth = 2.0f * elliptic_curve(pieceEndx, focalPoint1H, focalPoint2H, exitWidth);
 #ifdef DEBUG
-      std::cout << "\t" << pieceStartx << "  " << pieceEntrWidth << "  " << pieceExitWidth << " H" << std::endl;
+      std::cout << "\t" << pieceStartx << "  " << pieceEntrWidth << " H" << std::endl;
 #endif
       dataFileH << "\t" << pieceStartx << "  " << pieceEntrWidth << std::endl;
       
@@ -3462,7 +4193,8 @@ void Sandman::ellipticOpeningGuide(const float length, const float exitWidth, co
 	  dataFileV << "\t" << pieceEndx << "  exit " << pieceExitHeight << std::endl;
 	}
       
-      sandGuideElementCUDA(length,
+      sandGuideElementCUDA(
+			   section_length,
 			   pieceEntrWidth,
 			   pieceExitWidth,
 			   0.0f,
@@ -3500,8 +4232,8 @@ void Sandman::ellipticClosingGuide(const float length, const float entrWidth, co
 	float pieceExitHeight;
         float pieceStartx;
         float pieceEndx;
-        float focalpoint1V, focalpoint2V;
-	float focalpoint1H, focalpoint2H;
+	//        float focalpoint1V, focalpoint2V;
+	//float focalpoint1H, focalpoint2H;
 
 	
 	const char* filenameH = "hEllipseClosingProfile.dat";
@@ -3572,7 +4304,7 @@ void Sandman::ellipticClosingGuide(const float length, const float entrWidth, co
 		dataFileV << "\t" << pieceEndx << "  " << pieceExitHeight << std::endl;
 	      }
 	    
-	    sandGuideElementCUDA(length,
+	    sandGuideElementCUDA(section_length,
 				 pieceEntrWidth,
 				 pieceExitWidth,
 				 0.0f,
@@ -3603,6 +4335,235 @@ void Sandman::ellipticClosingGuide(const float length, const float entrWidth, co
 
 
 
+
+
+
+
+void Sandman::parabolicOpeningGuide(const float length, const float exitWidth, const float exitHeight, const float focalPointH, const float focalPointV, const float mNumber, const int numSections)
+{
+  //Models a focussing parabolic guide by using straight sections
+  //Focal lengths are defined relative to the entrance plane
+  
+  float section_length;
+  float pieceEntrWidth;
+  float pieceExitWidth;
+  float pieceEntrHeight;
+  float pieceExitHeight;
+  float pieceStartx;
+  float pieceEndx;
+  //  float focalpoint1V, focalpoint2V;
+  //float focalpoint1H, focalpoint2H;
+  
+	
+  const char* filenameH = "hParabolaOpeningProfile.dat";
+  const char* filenameV = "vParabolaOpeningProfile.dat";
+  
+  std::cout << color_yellow << "OPENING PARABOLA" << color_reset << std::endl; 
+
+  std::ofstream dataFileH;
+  dataFileH.open(filenameH);
+  
+  if(dataFileH.fail())
+    {
+      std::cerr << "ERROR opening file " << filenameH << std::endl;
+      return;
+    }
+  
+  std::ofstream dataFileV;
+  dataFileV.open(filenameV);
+  
+  if(dataFileV.fail())
+    {
+      std::cerr << "ERROR opening file " << filenameV << std::endl;
+      return;
+    }
+  
+  
+  int i;
+  
+  //Break guide into sections
+  section_length = length / (float) numSections;
+  
+  std::cout << "\tLength " << length << " m and exit width = " << exitWidth  << " m focus H at " << focalPointH  << " and focus V at " << focalPointV << " formed by " << numSections << " sections of " << section_length << " m" << std::endl;
+  
+  //Loop over converging guide approximations printing out the widths
+
+#ifdef DEBUG 
+  std::cout << "\tProfile:" << std::endl;
+  std::cout << "\txpos width" << std::endl;
+#endif
+  
+  for (i = 0; i < numSections; i++) 
+    {
+      pieceStartx = section_length * (float) i;
+      pieceEndx = section_length * (float) (i + 1);
+      
+      //Take JNADS curves and put these into two dimensions	 
+      pieceEntrWidth = 2.0f * parabolic_opening_curve(pieceStartx, length, focalPointH, exitWidth);
+      pieceExitWidth = 2.0f * parabolic_opening_curve(pieceEndx, length, focalPointH, exitWidth);
+#ifdef DEBUG
+      std::cout << "\t" << pieceStartx << "  " << pieceEntrWidth << " H" << std::endl;
+#endif
+      dataFileH << "\t" << pieceStartx << "  " << pieceEntrWidth << std::endl;
+      
+      pieceEntrHeight = 2.0f * parabolic_opening_curve(pieceStartx, length, focalPointV, exitHeight);
+      pieceExitHeight = 2.0f * parabolic_opening_curve(pieceEndx, length, focalPointV, exitHeight);
+#ifdef DEBUG
+      std::cout << "\t" << pieceStartx << "  " << pieceEntrHeight << " V" << std::endl;
+#endif
+      dataFileV << "\t" << pieceStartx << "  " << pieceEntrHeight << std::endl;
+      
+      if (i == (numSections - 1)) 
+	{
+#ifdef DEBUG
+	  std::cout << "\t" << pieceEndx << "  exit " << pieceExitWidth << std::endl;
+	  std::cout << "\t" << pieceEndx << "  exit " << pieceExitHeight << std::endl;
+#endif
+	  dataFileH << "\t" << pieceEndx << "  exit " << pieceExitWidth << std::endl;
+	  dataFileV << "\t" << pieceEndx << "  exit " << pieceExitHeight << std::endl;
+	}
+      
+      sandGuideElementCUDA(
+			   section_length,
+			   pieceEntrWidth,
+			   pieceExitWidth,
+			   0.0f,
+			   mNumber,
+			   mNumber,
+			   pieceEntrHeight,
+			   pieceExitHeight,
+			   0.0f,
+			   mNumber,
+			   mNumber
+			   );
+    }
+  
+  
+  
+  std::cout << "\tParabolic opening guide finished" << std::endl;
+  
+  dataFileH.close();
+  dataFileV.close();
+}
+
+
+
+
+
+
+
+void Sandman::parabolicClosingGuide(const float length, const float entrWidth, const float entrHeight, const float focalPointH, const float focalPointV, const float mNumber, const int numSections)
+{
+        //Models a focussing parabolic guide by using straight sections
+
+        float section_length;
+        float pieceEntrWidth;
+        float pieceExitWidth;
+	float pieceEntrHeight;
+	float pieceExitHeight;
+        float pieceStartx;
+        float pieceEndx;
+	//        float focalpoint1V, focalpoint2V;
+	//float focalpoint1H, focalpoint2H;
+
+	
+	const char* filenameH = "hParabolaClosingProfile.dat";
+	const char* filenameV = "vParabolaClosingProfile.dat";
+
+	std::cout << color_yellow << "CLOSING PARABOLA" << color_reset << std::endl;
+
+	std::ofstream dataFileH;
+	dataFileH.open(filenameH);
+
+	if(dataFileH.fail())
+	  {
+	    std::cerr << "ERROR opening file " << filenameH << std::endl;
+	    return;
+	  }
+	
+	std::ofstream dataFileV;
+	dataFileV.open(filenameV);
+	
+	if(dataFileV.fail())
+	  {
+	    std::cerr << "ERROR opening file " << filenameV << std::endl;
+	    return;
+	  }
+	
+	  
+	int i;
+	  
+	//Break guide into sections
+	section_length = length / (float) numSections;
+
+	std::cout << "\tLength " << length << " m and focus H at " << focalPointH << " " << " and focus V at " << focalPointV << " " << " formed by " << numSections << " sections of m=" << mNumber;
+
+	
+	//Loop over converging guide approximations printing out the widths
+#ifdef DEBUG
+	std::cout << "\tProfile:" << std::endl;
+	std::cout << "\txpos  width" << std::endl;
+#endif
+	
+	for (i = 0; i < numSections; i++) 
+	  {
+	    pieceStartx = section_length * (float) i;
+	    pieceEndx = section_length * (float) (i + 1);
+	    
+	    //Take JNADS curves and put these into two dimensions
+	    pieceEntrWidth = 2.0f * parabolic_closing_curve(pieceStartx, focalPointH, entrWidth);
+	    pieceExitWidth = 2.0f * parabolic_closing_curve(pieceEndx, focalPointH, entrWidth);
+#ifdef DEBUG
+	    std::cout << "\t" << pieceStartx << "  " << pieceEntrWidth << " H" << std::endl;
+#endif
+	    dataFileH << "\t" << pieceStartx << "  " << pieceEntrWidth << std::endl;
+	    
+	    pieceEntrHeight = 2.0f * parabolic_closing_curve(pieceStartx, focalPointV, entrHeight);
+	    pieceExitHeight = 2.0f * parabolic_closing_curve(pieceEndx, focalPointV, entrHeight);
+#ifdef DEBUG
+	    std::cout << "\t" << pieceStartx << "  " << pieceEntrHeight << " V" << std::endl;
+#endif
+	    dataFileV << "\t" << pieceStartx << "  " << pieceEntrHeight << std::endl;
+	    
+	    if (i == numSections - 1) 
+	      {
+#ifdef DEBUG
+		std::cout << "\t" << pieceEndx << "  " << pieceExitWidth << std::endl;
+		std::cout << "\t" << pieceEndx << "  " << pieceExitHeight << std::endl;
+#endif
+		dataFileH << "\t" << pieceEndx << "  " << pieceExitWidth << std::endl;
+		dataFileV << "\t" << pieceEndx << "  " << pieceExitHeight << std::endl;
+	      }
+	    
+	    sandGuideElementCUDA(section_length,
+				 pieceEntrWidth,
+				 pieceExitWidth,
+				 0.0f,
+				 mNumber,
+				 mNumber,
+				 pieceEntrHeight,
+				 pieceExitHeight,
+				 0.0f,
+				 mNumber,
+				 mNumber
+				 );
+	  }
+	
+	
+	
+	std::cout << "\tParabolic closing guide finished" << std::endl;
+	
+	dataFileH.close();
+	dataFileV.close();
+}
+
+
+
+
+
+
+
+
 void Sandman::sandHorizontalBender(
 				   const float length,
 				   const float width,
@@ -3617,7 +4578,7 @@ void Sandman::sandHorizontalBender(
   //array of dedicated channel number floats
   const float nChannels = (float) numChannels;
 
-  std::cout << color_yellow << "MULTI-CHANNEL BENDER" << color_reset << std::endl;
+  std::cout << color_yellow << "MULTI-CHANNEL HORIZONTAL BENDER" << color_reset << std::endl;
   
   if(nChannels < 1.0)
     {
@@ -3625,20 +4586,25 @@ void Sandman::sandHorizontalBender(
       exit(1);
     }
 
-  const float opticalWidth = (width / nChannels) - waferThickness*(nChannels - 1.0f);
+  //Find the width of the empty space in a single channel
+  const float opticalWidth = (width / nChannels) - 0.5*waferThickness;
 
   if(opticalWidth < 0.001)
     {
       std::cerr << color_red << "ERROR:" << color_reset << " optical width is less than 1 mm in horizontal bender module (value is " << opticalWidth << ")" << std::endl;
+      std::cerr << "\t width = " << width << "; nChannels = " << nChannels << std::endl;
       exit(1);
     }
 
-  std::cout << nChannels << " channel bender " << width << " wide and of length " << length << " from wafers of thickness " << waferThickness << std::endl;
+  std::cout << nChannels << " channel bender " << width << " wide and of length " << length << " from wafers of thickness " << waferThickness << " and channels " << opticalWidth << " wide" << std::endl;
+
+  //Kill neutrons missing the entrance of the system
+  sandApertureCUDA(width,height);
 
   //First squeeze the neutrons into the channel
   sandSqueezeHorizontalBenderChannels(width, nChannels, waferThickness);
 
-  //Propagate a normal curved guide with 20 cm long pieces
+  //Propagate a normal curved guide with shorter, 20 cm long pieces
   sandCurvedGuide(length, 0.2f, opticalWidth, height, mval, radius);
 
   //UnSqueeze the neutrons out of the channel
@@ -3648,6 +4614,53 @@ void Sandman::sandHorizontalBender(
 }
 
 
+
+void Sandman::sandVerticalBender(
+				   const float length,
+				   const float width,
+				   const float height,
+				   const int numChannels,
+				   const float waferThickness,
+				   const float radius,
+				   const float mval
+				   )
+{
+  //This is a one-off, but malloc is expensive to use repetitively, so use
+  //array of dedicated channel number floats
+  const float nChannels = (float) numChannels;
+
+  std::cout << color_yellow << "MULTI-CHANNEL VERTICAL BENDER" << color_reset << std::endl;
+  
+  if(nChannels < 1.0)
+    {
+      std::cerr << color_red << "ERROR:" << color_reset << " attempt to use vertical bender with < 1 channels" << std::endl;
+      exit(1);
+    }
+
+  const float opticalHeight = (height / nChannels) - 0.5*waferThickness;
+
+  if(opticalHeight < 0.001)
+    {
+      std::cerr << color_red << "ERROR:" << color_reset << " optical height is less than 1 mm in vertical bender module (value is " << opticalHeight << ")" << std::endl;
+      std::cerr << "\t height = " << height << "; nChannels = " << nChannels << std::endl;
+      exit(1);
+    }
+
+  std::cout << nChannels << " channel bender " << height << " tall and of length " << length << " from wafers of thickness " << waferThickness << std::endl;
+
+  //Kill neutrons missing the entrance of the system
+  sandApertureCUDA(width,height);
+
+  //First squeeze the neutrons into the channel
+  sandSqueezeVerticalBenderChannels(height, nChannels, waferThickness);
+
+  //Propagate a normal curved guide with 20 cm long pieces
+  sandVerticallyCurvedGuide(length, 0.2f, width, opticalHeight, mval, radius);
+
+  //UnSqueeze the neutrons out of the channel
+  sandUnSqueezeVerticalBenderChannels(height, nChannels, waferThickness);  
+  
+}
 
 
 
@@ -4127,7 +5140,7 @@ void Sandman::sandDebugPosPos(float *h_pointsH, float *h_weightH, float *h_point
 ///bender.  Then the opposite function "unSqueeze..." reverses this process
 void Sandman::sandSqueezeHorizontalBenderChannels(const float width, const float numChannels, const float waferThickness)
 {
-  //Channel width in this case includes one wafer on the far side
+  //Channel width in each case includes one wafer thickness, which is attenuated if the neutron hits it
   float channelWidth = (width + waferThickness) / numChannels; //(this calc has last channel wafer inside the guide substrate mathematically)
  
   //Device now computes
@@ -4149,8 +5162,6 @@ void Sandman::sandSqueezeHorizontalBenderChannels(const float width, const float
 
   global_squeezeBenderChannel<<<blocksPerGrid, threadsPerBlock>>>
     (d_pointsYH, d_tempArray, width, channelWidth, waferThickness, numElements);
-  
-  
 }
 
 
@@ -4181,3 +5192,65 @@ void Sandman::sandUnSqueezeHorizontalBenderChannels(const float width, const flo
   
 }
 
+
+
+
+
+
+///Calculates which channel number (left to right) the neutron sits in, then
+///shifts all phase space to fit in a single version of that channel so that
+///the curved guide module can be used to do the transport for a multi-channel
+///bender.  Then the opposite function "unSqueeze..." reverses this process
+void Sandman::sandSqueezeVerticalBenderChannels(const float height, const float numChannels, const float waferThickness)
+{
+  //Channel width in this case includes one wafer on the far side
+  float channelHeight = (height + waferThickness) / numChannels; //(this calc has last channel wafer inside the guide substrate mathematically)
+ 
+  //Device now computes
+  //relativeY = ypos[i] + width/2.0;
+  //channelNumber = roundf( relativeY / channelwidth );
+  //That is stored in tempArray
+  
+  //Then we adjust the position to be within a single channel of the right thickness for the OPTICS
+  //ypos[i] = ypos[i] + width/2.0f;
+  //ypos[i] = ypos[i] / channelNumber;
+  //ypos[i] = ypos[i] - 0.5f * (channelWidth-waferThickness);
+
+  int threadsPerBlock = SANDMAN_CUDA_THREADS;
+  int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
+  if(showCUDAsteps)
+    printf("\tCUDA kernel squeeze v bender with %d blocks of %d threads\n", blocksPerGrid,
+	   threadsPerBlock);
+
+
+  global_squeezeBenderChannel<<<blocksPerGrid, threadsPerBlock>>>
+    (d_pointsYV, d_tempArray, height, channelHeight, waferThickness, numElements);
+}
+
+
+///"Squeeze...() calculates which channel number (left to right) the neutron
+///sits in, then shifts all phase space to fit in a single version of that
+///channel so that the curved guide module can be used to do the transport for
+///a multi-channel bender.  This function "unSqueeze..." reverses this process
+///after the bender has been done
+void Sandman::sandUnSqueezeVerticalBenderChannels(const float height, const float numChannels, const float waferThickness)
+{
+  //Channel width in this case includes one wafer on the far side
+  float channelHeight = (height + waferThickness) / numChannels; //(this calc has last channel wafer inside the guide substrate mathematically)
+  
+  //Device reverses the position adjustment of sandSqueeze...
+  //ypos[i] = ypos[i] + 0.5f * (channelWidth - waferThickness);
+  //ypos[i] = ypos[i] * channelNumber;
+  //ypos[i] = ypos[i] - width/2.0f;
+
+  int threadsPerBlock = SANDMAN_CUDA_THREADS;
+  int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
+  if(showCUDAsteps)
+    printf("\tCUDA kernel unsqueeze v bender with %d blocks of %d threads\n", blocksPerGrid,
+	   threadsPerBlock);
+
+
+  global_unSqueezeBenderChannel<<<blocksPerGrid, threadsPerBlock>>>
+    (d_pointsYV, d_tempArray, height, channelHeight, waferThickness, numElements);
+  
+}

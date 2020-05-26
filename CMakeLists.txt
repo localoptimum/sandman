@@ -7,7 +7,6 @@ FIND_PACKAGE(CUDA REQUIRED)
 INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/include /usr/local/cuda/include
 /usr/local/cuda/samples/common/inc )
 
-
 # Build list of source files
 SET(SOURCES "")
 SET(HEADERS "")

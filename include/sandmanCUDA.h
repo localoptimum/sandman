@@ -109,6 +109,14 @@ class Sandman {
 			       const float width,
 			       const float height,
 			       const float mval);
+
+  void sandTaperedStraightGuide(
+			       const float length,
+			       const float entranceWidth,
+			       const float entranceHeight,
+			       const float exitWidth,
+			       const float exitHeight,
+			       const float mval);
   
   void sandCurvedGuide(
 		       const float length,
@@ -118,8 +126,27 @@ class Sandman {
 		       const float mval,
 		       const float radius
 		       );
+
+  void sandVerticallyCurvedGuide(
+		       const float length,
+		       const float sectionLength,
+		       const float width,
+		       const float height,
+		       const float mval,
+		       const float radius
+		       );
   
   void sandHorizontalBender(
+			    const float length,
+			    const float width,
+			    const float height,
+			    const int numChannels,
+			    const float waferThickness,
+			    const float radius,
+			    const float mval
+			    );
+
+  void sandVerticalBender(
 			    const float length,
 			    const float width,
 			    const float height,
@@ -153,8 +180,38 @@ class Sandman {
 			    const int numSections
 			    );
 
+  void parabolicOpeningGuide(
+			     const float length, 
+			     const float entr_width, 
+			     const float entr_height, 
+			     const float focalPointH, 
+			     const float focalPointV,
+			     const float mNumber, 
+			     const int numSections
+			     );
+
+  
+  void parabolicClosingGuide(
+			     const float length, 
+			     const float entr_width, 
+			     const float entr_height, 
+			     const float focalPointH, 
+			     const float focalPointV,
+			     const float mNumber, 
+			     const int numSections
+			     );
+
+
   
   void sandILLHCSModerator(void);
+
+  void sandPSIModerator(void);
+
+  void sandBrillianceTransferModerator(
+				       const float width,
+				       const float height,
+				       const float hoffset,
+				       const float voffset);
 
 
   void sandModerator(
@@ -202,17 +259,22 @@ class Sandman {
 
   void sandRotation(const float angleH, const float angleV);
   void sandRotationH(const float angleH);
+  void sandRotationV(const float angleV);
 
   void sandTranslationV(const float distanceV);
   void sandTranslationH(const float distanceH);
+
+  void sandRollPhaseSpace(const float theta);
 
   void sandFreeSpaceCUDA(const float distance, const bool& verbose=true);
   void sandSkewCUDA(const float distance_m);
   void sandReflection(const float mirrorY1, const float mirrorY2, const float mirrorAngle1, const float mirrorAngle2, const float mValue);
 
-void sandCollimateCUDA(const float divergenceH, const float divergenceV);
+  void sandCollimateCUDA(const float divergenceH, const float divergenceV);
 
-void sandApertureCUDA(const float window_width, const float window_height);
+  void sandApertureCUDA(const float window_width, const float window_height);
+  void sandApertureV(const float window_height);
+  void sandApertureH(const float window_width);
 
 
   void sandCountTrajectories(void);
@@ -229,7 +291,7 @@ void sandApertureCUDA(const float window_width, const float window_height);
   void debugPosPosCPU(const char *filename);
   void phaseSpaceMapH(const char *filename, const float ymin, const float ymax, const float thetaMin, const float thetaMax);
   void phaseSpaceMapH(const char *filename);  // auto detects the boundaries for you
-
+  void phaseSpaceMapV(const char *filename, const float ymin, const float ymax, const float thetaMin, const float thetaMax);
 
 
 
@@ -246,6 +308,7 @@ void sandApertureCUDA(const float window_width, const float window_height);
 
  private: 
 
+  
   bool showCUDAsteps;
   void displayWelcome(void);
  
@@ -257,6 +320,7 @@ void sandApertureCUDA(const float window_width, const float window_height);
 
   void executeLambdaMonitor(void);
   void executePhaseSpaceMapH(void);
+  void executePhaseSpaceMapV(void);
   
   float arrayMinimum(const float *array, float *result);
   float arrayMaximum(const float *array, float *result);
@@ -271,6 +335,10 @@ void sandApertureCUDA(const float window_width, const float window_height);
 
   void sandSqueezeHorizontalBenderChannels(const float width, const float numChannels, const float waferThickness);
   void sandUnSqueezeHorizontalBenderChannels(const float width, const float numChannels, const float waferThickness);
+
+  void sandSqueezeVerticalBenderChannels(const float height, const float numChannels, const float waferThickness);
+  void sandUnSqueezeVerticalBenderChannels(const float height, const float numChannels, const float waferThickness);
+
   
   void report(void);
 };
