@@ -1058,6 +1058,25 @@ static void global_aperture(float *d_weight, const float *d_pointsY, const float
 
 
 
+__global__
+static void global_beamstop(float *d_weight, const float *d_pointsY, const float lower_position, const float upper_position, const int numElements)
+{ 
+  int i = blockIdx.x*blockDim.x + threadIdx.x;
+
+  if(i<numElements)
+    {
+      if(d_pointsY[i] > lower_position && d_pointsY[i] < upper_position)
+	{
+	  d_weight[i] = 0.0;
+	}
+    }
+}
+
+
+
+
+
+
 
 
 __host__ __device__
@@ -1344,7 +1363,10 @@ static void global_arrayMaximum(const float *array, float globalMax[1], const in
       //at this point - the if statement is not synchronised and it overwrites
       
       if(array[i] > sharedMax)
-	atomicExch(&sharedMax, array[i]);      
+	{
+	  __syncthreads();
+	  atomicExch(&sharedMax, array[i]);
+	}
     }
   
   __syncthreads();
@@ -1355,7 +1377,10 @@ static void global_arrayMaximum(const float *array, float globalMax[1], const in
     if(tid == 0)
       {
 	if(sharedMax > globalMax[0]);
+	{
+	  __syncthreads();
 	  atomicExch(&globalMax[0], sharedMax);
+	}
       }
   }
   __syncthreads();
@@ -3073,6 +3098,17 @@ void Sandman::sandCollimateCUDA(const float divergenceH, const float divergenceV
 }
 
 
+
+////////////////////////////////////////
+//
+//     Apertures
+//
+////////////////////////////////////////
+
+
+
+
+
 void Sandman::sandApertureV(const float window_height)
 {
   ///
@@ -3150,6 +3186,117 @@ void Sandman::sandApertureCUDA(const float window_width, const float window_heig
     global_aperture<<<blocksPerGrid, threadsPerBlock>>>
       (d_weightVg, d_pointsYV, -fabs(window_height/2.0f), fabs(window_height/2.0f), numElements);
 }
+
+
+
+
+
+
+/////////////////////////////////
+//
+//       Beamstops
+//
+/////////////////////////////////
+
+
+void Sandman::sandBeamstopV(const float beamstop_height)
+{
+  ///
+  /// Calls the CUDA kernels to compute a beamstop operation, setting the
+  /// weight to zero on trajectories falling inside the position window
+  /// requested.
+  ///
+  /// @param beamstop_height the full height of the window in metres.
+  ///
+  
+   int threadsPerBlock = SANDMAN_CUDA_THREADS;
+   int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
+   if(showCUDAsteps)
+     printf("\tCUDA kernel beamstop of height %f with %d blocks of %d threads\n", beamstop_height, blocksPerGrid,
+	    threadsPerBlock);
+
+   // void global_collimation(float *d_weight, const float *d_pointsTheta, const float lower_angle, const float upper_angle, const int numElements)
+
+    global_beamstop<<<blocksPerGrid, threadsPerBlock>>>
+      (d_weightVg, d_pointsYV, -fabs(beamstop_height/2.0f), fabs(beamstop_height/2.0f), numElements);
+}
+
+
+void Sandman::sandBeamstopH(const float beamstop_width)
+{
+  ///
+  /// Calls the CUDA kernels to compute a beamstop operation, setting the
+  /// weight to zero on trajectories falling inside the position window
+  /// requested.
+  ///
+  /// @param window_width the full width of the window in metres.
+  ///
+  
+   int threadsPerBlock = SANDMAN_CUDA_THREADS;
+   int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
+   if(showCUDAsteps)
+     printf("\tCUDA kernel beamstop of width %f with %d blocks of %d threads\n", beamstop_width, blocksPerGrid,
+	    threadsPerBlock);
+
+   // void global_collimation(float *d_weight, const float *d_pointsTheta, const float lower_angle, const float upper_angle, const int numElements)
+
+
+    global_beamstop<<<blocksPerGrid, threadsPerBlock>>>
+      (d_weightHg, d_pointsYH, -fabs(beamstop_width/2.0f), fabs(beamstop_width/2.0f), numElements);
+}
+
+
+
+
+
+void Sandman::sandBeamstopCUDA(const float beamstop_width, const float beamstop_height)
+{
+  ///
+  /// Calls the CUDA kernels to compute a beamstop operation, setting the
+  /// weight to zero on trajectories falling outside the position window
+  /// requested.
+  ///
+  /// @param window_width the full width of the window in metres.
+  ///
+  /// @param window_height the full height of the window in metres.
+  ///
+
+  std::cout << color_yellow << "BEAMSTOP" << color_reset << std::endl;
+
+  std::cout << "\twidth  = " << beamstop_width << std::endl;
+  std::cout << "\theight = " << beamstop_height << std::endl;
+  
+   int threadsPerBlock = SANDMAN_CUDA_THREADS;
+   int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
+   if(showCUDAsteps)
+     printf("\tCUDA kernel beamstop of width %f and height %f with %d blocks of %d threads\n", beamstop_width, beamstop_height, blocksPerGrid,
+	    threadsPerBlock);
+
+   // void global_collimation(float *d_weight, const float *d_pointsTheta, const float lower_angle, const float upper_angle, const int numElements)
+
+
+    global_beamstop<<<blocksPerGrid, threadsPerBlock>>>
+      (d_weightHg, d_pointsYH, -fabs(beamstop_width/2.0f), fabs(beamstop_width/2.0f), numElements);
+
+    global_beamstop<<<blocksPerGrid, threadsPerBlock>>>
+      (d_weightVg, d_pointsYV, -fabs(beamstop_height/2.0f), fabs(beamstop_height/2.0f), numElements);
+}
+
+
+
+
+
+/////////////////////////////////
+//
+//        Moderators
+//
+/////////////////////////////////
+
+
+
+
+
+
 
 
 

@@ -276,6 +276,11 @@ class Sandman {
   void sandApertureV(const float window_height);
   void sandApertureH(const float window_width);
 
+  void sandBeamstopCUDA(const float beamstop_width, const float beamstop_height);
+  void sandBeamstopV(const float beamstop_height);
+  void sandBeamstopH(const float beamstop_width);
+  
+
 
   void sandCountTrajectories(void);
 
