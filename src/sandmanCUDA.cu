@@ -2033,7 +2033,7 @@ void Sandman::lambdaMonitor(const std::string setFilename, const float setLambda
   manipulatedFilename = setFilename;
   manipulatedFilename = remove_extension(manipulatedFilename);
   
-  manipulatedFilename = manipulatedFilename + "Lambda1D.dat";
+  manipulatedFilename = manipulatedFilename + "Lambda1D.csv";
   
 
   lambdaFileName = manipulatedFilename;
@@ -2143,7 +2143,7 @@ void Sandman::executeLambdaMonitor(void)
 
   for(i=0; i < lambdaHistSize; i++)
     {
-      outfile << runningLambda << "  " << h_lambdaHist[i] << std::endl;
+      outfile << runningLambda << "," << h_lambdaHist[i] << std::endl;
       runningLambda = runningLambda + dLambda;
       lambdaIntegral += h_lambdaHist[i]*dLambda;
     }
@@ -2222,7 +2222,7 @@ void Sandman::sandPosMonitorH(const std::string filename, const float min, const
 
   for(i=0; i<histSize; i++)
     {
-      outfile << runningX << "  " << h_hist[i] << std::endl;
+      outfile << runningX << "," << h_hist[i] << std::endl;
       runningX = runningX + dval;
     }
   
@@ -2251,7 +2251,7 @@ void Sandman::phaseSpaceMapH(const char *filename, const float ymin, const float
   if( d_pointsThetaHsnapshot != NULL ||
       d_pointsYHsnapshot != NULL )
     {
-      std::cout << color_red << "ERROR:" << color_reset << " only one type of beam monitor snapshot can be created" << std::endl;
+      std::cout << color_red << "ERROR:" << color_reset << " only one type of beam monitor snapshot can be used at a time (lambda & horizontal phase space monitors use same snapshot arrays)" << std::endl;
       exit(1);
     }
   
@@ -2475,7 +2475,7 @@ void Sandman::executePhaseSpaceMapH(void)
 	  runningTheta = thetaMinSnapshot + dtheta * (float) j;
 	  runningY = yminSnapshot + dy * (float) i;
 	  //[theta][y]
-	  dataFile << runningTheta << " " << runningY << "  " << h_histogram[j*100+i] << std::endl;
+	  dataFile << runningTheta << "," << runningY << "," << h_histogram[j*100+i] << std::endl;
 	}
     }
   
@@ -2848,7 +2848,7 @@ void Sandman::phaseSpaceMapHCPU(const char *filename)
     {
       if(h_weight[i] > deadWeight)
 	{
-	  dataFile << h_pointsTheta[i]*180.0f/PI_FLOAT << "\t" << h_pointsY[i] << "\t" << h_weight[i] << std::endl;
+	  dataFile << h_pointsTheta[i]*180.0f/PI_FLOAT << "," << h_pointsY[i] << "," << h_weight[i] << std::endl;
 	  dumped++;
 	}
     }
@@ -2929,7 +2929,7 @@ void Sandman::phaseSpaceMapVCPU(const char *filename)
   for(i=0; i<numElements && i<200000; i++)
     {
       if(h_weight[i] > deadWeight)
-	dataFile << h_pointsTheta[i]*180.0f/PI_FLOAT << "\t" << h_pointsY[i] << "\t" << h_weight[i] << std::endl;
+	dataFile << h_pointsTheta[i]*180.0f/PI_FLOAT << "," << h_pointsY[i] << "," << h_weight[i] << std::endl;
     }
   
   dataFile.close();
@@ -4272,8 +4272,8 @@ void Sandman::ellipticOpeningGuide(const float length, const float exitWidth, co
   //float focalpoint1H, focalpoint2H;
   
 	
-  const char* filenameH = "hEllipseOpeningProfile.dat";
-  const char* filenameV = "vEllipseOpeningProfile.dat";
+  const char* filenameH = "hEllipseOpeningProfile.csv";
+  const char* filenameV = "vEllipseOpeningProfile.csv";
   
   std::cout << color_yellow << "OPENING HALF ELLIPSE" << color_reset << std::endl; 
 
@@ -4321,14 +4321,14 @@ void Sandman::ellipticOpeningGuide(const float length, const float exitWidth, co
 #ifdef DEBUG
       std::cout << "\t" << pieceStartx << "  " << pieceEntrWidth << " H" << std::endl;
 #endif
-      dataFileH << "\t" << pieceStartx << "  " << pieceEntrWidth << std::endl;
+      dataFileH << pieceStartx << "," << pieceEntrWidth << std::endl;
       
       pieceEntrHeight = 2.0f * elliptic_curve(pieceStartx, focalPoint1V, focalPoint2V, exitHeight);
       pieceExitHeight = 2.0f * elliptic_curve(pieceEndx, focalPoint1V, focalPoint2V, exitHeight);
 #ifdef DEBUG
       std::cout << "\t" << pieceStartx << "  " << pieceEntrHeight << " V" << std::endl;
 #endif
-      dataFileV << "\t" << pieceStartx << "  " << pieceEntrHeight << std::endl;
+      dataFileV << pieceStartx << "," << pieceEntrHeight << std::endl;
       
       if (i == (numSections - 1)) 
 	{
@@ -4336,8 +4336,8 @@ void Sandman::ellipticOpeningGuide(const float length, const float exitWidth, co
 	  std::cout << "\t" << pieceEndx << "  exit " << pieceExitWidth << std::endl;
 	  std::cout << "\t" << pieceEndx << "  exit " << pieceExitHeight << std::endl;
 #endif
-	  dataFileH << "\t" << pieceEndx << "  exit " << pieceExitWidth << std::endl;
-	  dataFileV << "\t" << pieceEndx << "  exit " << pieceExitHeight << std::endl;
+	  dataFileH << pieceEndx << "," << pieceExitWidth << std::endl;
+	  dataFileV << pieceEndx << "," << pieceExitHeight << std::endl;
 	}
       
       sandGuideElementCUDA(
@@ -4383,8 +4383,8 @@ void Sandman::ellipticClosingGuide(const float length, const float entrWidth, co
 	//float focalpoint1H, focalpoint2H;
 
 	
-	const char* filenameH = "hEllipseClosingProfile.dat";
-	const char* filenameV = "vEllipseClosingProfile.dat";
+	const char* filenameH = "hEllipseClosingProfile.csv";
+	const char* filenameV = "vEllipseClosingProfile.csv";
 
 	std::cout << color_yellow << "CLOSING HALF ELLIPSE" << color_reset << std::endl;
 
@@ -4432,14 +4432,14 @@ void Sandman::ellipticClosingGuide(const float length, const float entrWidth, co
 #ifdef DEBUG
 	    std::cout << "\t" << pieceStartx << "  " << pieceEntrWidth << " H" << std::endl;
 #endif
-	    dataFileH << "\t" << pieceStartx << "  " << pieceEntrWidth << std::endl;
+	    dataFileH << pieceStartx << "," << pieceEntrWidth << std::endl;
 	    
 	    pieceEntrHeight = 2.0f * elliptic_curve(pieceStartx, focalPoint1V, focalPoint2V, entrHeight);
 	    pieceExitHeight = 2.0f * elliptic_curve(pieceEndx, focalPoint1V, focalPoint2V, entrHeight);
 #ifdef DEBUG
 	    std::cout << "\t" << pieceStartx << "  " << pieceEntrHeight << " V" << std::endl;
 #endif
-	    dataFileV << "\t" << pieceStartx << "  " << pieceEntrHeight << std::endl;
+	    dataFileV << pieceStartx << "," << pieceEntrHeight << std::endl;
 	    
 	    if (i == numSections - 1) 
 	      {
@@ -4447,8 +4447,8 @@ void Sandman::ellipticClosingGuide(const float length, const float entrWidth, co
 		std::cout << "\t" << pieceEndx << "  " << pieceExitWidth << std::endl;
 		std::cout << "\t" << pieceEndx << "  " << pieceExitHeight << std::endl;
 #endif
-		dataFileH << "\t" << pieceEndx << "  " << pieceExitWidth << std::endl;
-		dataFileV << "\t" << pieceEndx << "  " << pieceExitHeight << std::endl;
+		dataFileH << pieceEndx << "," << pieceExitWidth << std::endl;
+		dataFileV << pieceEndx << "," << pieceExitHeight << std::endl;
 	      }
 	    
 	    sandGuideElementCUDA(section_length,
@@ -4502,8 +4502,8 @@ void Sandman::parabolicOpeningGuide(const float length, const float exitWidth, c
   //float focalpoint1H, focalpoint2H;
   
 	
-  const char* filenameH = "hParabolaOpeningProfile.dat";
-  const char* filenameV = "vParabolaOpeningProfile.dat";
+  const char* filenameH = "hParabolaOpeningProfile.csv";
+  const char* filenameV = "vParabolaOpeningProfile.csv";
   
   std::cout << color_yellow << "OPENING PARABOLA" << color_reset << std::endl; 
 
@@ -4551,14 +4551,14 @@ void Sandman::parabolicOpeningGuide(const float length, const float exitWidth, c
 #ifdef DEBUG
       std::cout << "\t" << pieceStartx << "  " << pieceEntrWidth << " H" << std::endl;
 #endif
-      dataFileH << "\t" << pieceStartx << "  " << pieceEntrWidth << std::endl;
+      dataFileH << pieceStartx << "," << pieceEntrWidth << std::endl;
       
       pieceEntrHeight = 2.0f * parabolic_opening_curve(pieceStartx, length, focalPointV, exitHeight);
       pieceExitHeight = 2.0f * parabolic_opening_curve(pieceEndx, length, focalPointV, exitHeight);
 #ifdef DEBUG
       std::cout << "\t" << pieceStartx << "  " << pieceEntrHeight << " V" << std::endl;
 #endif
-      dataFileV << "\t" << pieceStartx << "  " << pieceEntrHeight << std::endl;
+      dataFileV << pieceStartx << "," << pieceEntrHeight << std::endl;
       
       if (i == (numSections - 1)) 
 	{
@@ -4566,8 +4566,8 @@ void Sandman::parabolicOpeningGuide(const float length, const float exitWidth, c
 	  std::cout << "\t" << pieceEndx << "  exit " << pieceExitWidth << std::endl;
 	  std::cout << "\t" << pieceEndx << "  exit " << pieceExitHeight << std::endl;
 #endif
-	  dataFileH << "\t" << pieceEndx << "  exit " << pieceExitWidth << std::endl;
-	  dataFileV << "\t" << pieceEndx << "  exit " << pieceExitHeight << std::endl;
+	  dataFileH << pieceEndx << "," << pieceExitWidth << std::endl;
+	  dataFileV << pieceEndx << "," << pieceExitHeight << std::endl;
 	}
       
       sandGuideElementCUDA(
@@ -4614,8 +4614,8 @@ void Sandman::parabolicClosingGuide(const float length, const float entrWidth, c
 	//float focalpoint1H, focalpoint2H;
 
 	
-	const char* filenameH = "hParabolaClosingProfile.dat";
-	const char* filenameV = "vParabolaClosingProfile.dat";
+	const char* filenameH = "hParabolaClosingProfile.csv";
+	const char* filenameV = "vParabolaClosingProfile.csv";
 
 	std::cout << color_yellow << "CLOSING PARABOLA" << color_reset << std::endl;
 
@@ -4663,14 +4663,14 @@ void Sandman::parabolicClosingGuide(const float length, const float entrWidth, c
 #ifdef DEBUG
 	    std::cout << "\t" << pieceStartx << "  " << pieceEntrWidth << " H" << std::endl;
 #endif
-	    dataFileH << "\t" << pieceStartx << "  " << pieceEntrWidth << std::endl;
+	    dataFileH << pieceStartx << "," << pieceEntrWidth << std::endl;
 	    
 	    pieceEntrHeight = 2.0f * parabolic_closing_curve(pieceStartx, focalPointV, entrHeight);
 	    pieceExitHeight = 2.0f * parabolic_closing_curve(pieceEndx, focalPointV, entrHeight);
 #ifdef DEBUG
 	    std::cout << "\t" << pieceStartx << "  " << pieceEntrHeight << " V" << std::endl;
 #endif
-	    dataFileV << "\t" << pieceStartx << "  " << pieceEntrHeight << std::endl;
+	    dataFileV << pieceStartx << "," << pieceEntrHeight << std::endl;
 	    
 	    if (i == numSections - 1) 
 	      {
@@ -4678,8 +4678,8 @@ void Sandman::parabolicClosingGuide(const float length, const float entrWidth, c
 		std::cout << "\t" << pieceEndx << "  " << pieceExitWidth << std::endl;
 		std::cout << "\t" << pieceEndx << "  " << pieceExitHeight << std::endl;
 #endif
-		dataFileH << "\t" << pieceEndx << "  " << pieceExitWidth << std::endl;
-		dataFileV << "\t" << pieceEndx << "  " << pieceExitHeight << std::endl;
+		dataFileH << pieceEndx << "," << pieceExitWidth << std::endl;
+		dataFileV << pieceEndx << "," << pieceExitHeight << std::endl;
 	      }
 	    
 	    sandGuideElementCUDA(section_length,
@@ -5003,7 +5003,7 @@ void Sandman::sample(
 	
 	//Create phase space snapshots
 	phaseSpaceMapH( 
-		       (monitorNameStem + "Horizontal2D.dat").c_str(), 
+		       (monitorNameStem + "Horizontal2D.csv").c_str(), 
 		       yMinH, 
 		       yMaxH,
 		       thetaMinH,
