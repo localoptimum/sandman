@@ -272,7 +272,7 @@ class Sandman {
 
   void sandCollimateCUDA(const float divergenceH, const float divergenceV);
 
-  void sandApertureCUDA(const float window_width, const float window_height);
+  void sandApertureCUDA(const float window_width, const float window_height, bool silent=false);
   void sandApertureV(const float window_height);
   void sandApertureH(const float window_width);
 
@@ -288,14 +288,14 @@ class Sandman {
   void sandCountNeutronsSquareCorrected(void);
   void sandCountNeutronsCircleCorrected(void);
 
-  void lambdaMonitor(const std::string filename, const float lambdaMin, const float dlambda, int histSize);
+  void lambdaMonitor(const std::string filename, const float lambdaMin, const float lambdaMax, int histSize);
   void sandPosMonitorH(const std::string filename, const float min, const float dval, int histSize);
 
   void phaseSpaceMapHCPU(const char *filename);
   void phaseSpaceMapVCPU(const char *filename);
   void debugPosPosCPU(const char *filename);
   void phaseSpaceMapH(const char *filename, const float ymin, const float ymax, const float thetaMin, const float thetaMax);
-  void phaseSpaceMapH(const char *filename);  // auto detects the boundaries for you
+  void phaseSpaceMapH(const char *filename);  // auto detects the boundaries for you.  This has a race condition and is not yet working
   void phaseSpaceMapV(const char *filename, const float ymin, const float ymax, const float thetaMin, const float thetaMax);
 
 

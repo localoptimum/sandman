@@ -1041,10 +1041,14 @@ static void global_aperture(float *d_weight, const float *d_pointsY, const float
       //if(d_weight[i] > DEAD_WEIGHT)
 	{
 	  //Filter off lower points
-	  d_weight[i] = d_weight[i] * high_pass_filter(d_pointsY[i], lower_position);
+	  //	  d_weight[i] = d_weight[i] * high_pass_filter(d_pointsY[i], lower_position);
+	  if(d_pointsY[i] < lower_position)
+	    d_weight[i] = 0.0;
 	  
 	  //Filter off higher points
-	  d_weight[i] = d_weight[i] * low_pass_filter(d_pointsY[i], upper_position);
+	  //d_weight[i] = d_weight[i] * low_pass_filter(d_pointsY[i], upper_position);
+	  if(d_pointsY[i] > upper_position)
+	    d_weight[i] = 0.0;
 
 	  //	  if(isnan(d_weight[i]))
 	  //{
@@ -1234,14 +1238,14 @@ static void global_lambdaMonitor(float *lambdaHist, const float lambdaMin, const
       
       //This function agrees with VITESS "normalise with binsize = no"
       //be certain to send non-zero dLambda to this function!
-      element = weightH[i] * weightV[i] / dLambda; // in units of fractions of neutrons per angstrom
+      element = weightH[i] * weightV[i];// / dLambda; // in units of fractions of trajectory per angstrom
 
       //Normalise to wavelength range
-      element = element * sourceDeltaLambda; //in units of fractions of neutrons
+      element = element * sourceDeltaLambda; //in units of fractions of trajectory
 
       if(d_modflux != NULL)
 	{
-	  element = element * d_modflux[i] / (float)numElements;
+	  element = element * d_modflux[i] / (float)numElements; //in units of neutrons per second
 	}
 
       //if(isnan(element))
@@ -1499,7 +1503,6 @@ static void global_sandReflection(float *d_pointsY, float *d_pointsTheta, const 
   // reflected.  It might be the same speed, but I think this way is faster,
   // particularly with CUDA.
 
-  /* This bit either goes to openMP or CUDA */
 
   if(i<numElements)
     {
@@ -3159,7 +3162,7 @@ void Sandman::sandApertureH(const float window_width)
 
 
 
-void Sandman::sandApertureCUDA(const float window_width, const float window_height)
+void Sandman::sandApertureCUDA(const float window_width, const float window_height, bool silent)
 {
   ///
   /// Calls the CUDA kernels to compute an aperture operation, setting the
@@ -3170,6 +3173,21 @@ void Sandman::sandApertureCUDA(const float window_width, const float window_heig
   ///
   /// @param window_height the full height of the window in metres.
   ///
+
+  if(!silent)
+    {
+      std::cout << color_yellow << "APERTURE MASK" << color_reset << std::endl;
+
+      std::cout << "\twidth  = " << window_width << std::endl;
+      std::cout << "\theight = " << window_height << std::endl;
+    }
+  else
+    {
+      std::cout << "Optical unit entrance mask" << std::endl;
+
+      std::cout << "\twidth  = " << window_width << std::endl;
+      std::cout << "\theight = " << window_height << std::endl;
+    }
   
    int threadsPerBlock = SANDMAN_CUDA_THREADS;
    int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
@@ -3423,7 +3441,7 @@ void Sandman::sandILLHCSModerator(void)
   /// so is a useful cross-check.
   ///
 
-  sandApertureCUDA(0.186, 0.186);
+  sandApertureCUDA(0.186, 0.186, true);
   
    int threadsPerBlock = SANDMAN_CUDA_THREADS;
    int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
@@ -3464,7 +3482,7 @@ void Sandman::sandPSIModerator(void)
   /// so is a useful cross-check.
   ///
 
-  sandApertureCUDA(0.3, 0.3);
+  sandApertureCUDA(0.3, 0.3, true);
   
    int threadsPerBlock = SANDMAN_CUDA_THREADS;
    int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
@@ -3894,7 +3912,7 @@ void Sandman::sandSimpleStraightGuide(
 
 
   //Before we do anything else, kill neutrons missing the entrance of the guide.
-  sandApertureCUDA(width, height);
+  sandApertureCUDA(width, height, true);
 
   std::cout << color_yellow << "STRAIGHT GUIDE" << color_reset << std::endl;
 
@@ -3948,7 +3966,7 @@ void Sandman::sandTaperedStraightGuide(
 
 
   //Before we do anything else, kill neutrons missing the entrance of the guide.
-  sandApertureCUDA(entranceWidth, entranceHeight);
+  sandApertureCUDA(entranceWidth, entranceHeight, true);
 
   std::cout << color_yellow << "STRAIGHT TAPERED GUIDE" << color_reset << std::endl;
 
@@ -3973,7 +3991,7 @@ void Sandman::sandTaperedStraightGuide(
 		       mval,
 		       mval);
 
-  std::cout << "\tStraight guide finished" << std::endl;
+  std::cout << "\tStraight tapered guide finished" << std::endl;
 }
 
 
@@ -4008,7 +4026,7 @@ void Sandman::sandCurvedGuide(
   int i=0;
 
   //Before we do anything else, kill neutrons missing the entrance of the guide.
-  sandApertureCUDA(width, height);
+  sandApertureCUDA(width, height, true);
 
   std::cout << color_yellow << "CURVED GUIDE CHANNEL" << color_reset << std::endl;
   std::cout << "\tradius " << radius << " width " << width << " length " << length << " sectionLength " << sectionLength << std::endl; 
@@ -4144,7 +4162,7 @@ void Sandman::sandVerticallyCurvedGuide(
   int i=0;
 
   //Before we do anything else, kill neutrons missing the entrance of the guide.
-  sandApertureCUDA(width, height);
+  sandApertureCUDA(width, height, true);
 
   std::cout << color_yellow << "VERTICALLY CURVED GUIDE CHANNEL" << color_reset << std::endl; 
 
@@ -4746,7 +4764,7 @@ void Sandman::sandHorizontalBender(
   std::cout << nChannels << " channel bender " << width << " wide and of length " << length << " from wafers of thickness " << waferThickness << " and channels " << opticalWidth << " wide" << std::endl;
 
   //Kill neutrons missing the entrance of the system
-  sandApertureCUDA(width,height);
+  sandApertureCUDA(width,height, true);
 
   //First squeeze the neutrons into the channel
   sandSqueezeHorizontalBenderChannels(width, nChannels, waferThickness);
@@ -4796,7 +4814,7 @@ void Sandman::sandVerticalBender(
   std::cout << nChannels << " channel bender " << height << " tall and of length " << length << " from wafers of thickness " << waferThickness << std::endl;
 
   //Kill neutrons missing the entrance of the system
-  sandApertureCUDA(width,height);
+  sandApertureCUDA(width, height, true);
 
   //First squeeze the neutrons into the channel
   sandSqueezeVerticalBenderChannels(height, nChannels, waferThickness);
