@@ -14,17 +14,17 @@ which makes it crazy fast.
 
 ### Why?  What?  How?
 
-Klaus Habicht and I were standing on the stairs at HMI (now HZB) about
-11 years ago, and I was looking between my feet through 3 floors of
+Klaus Habicht and I were standing on the stairs at HMI (now HZB) around 2007,
+and I was looking between my feet through 3 floors of
 fire escape.  This gave me a funny idea that instead of simulating
 trajectories you might be able to construct a phase space volume and
 compress it flat, and the projection operation would do the whole work
-for you.  This ended up as acceptance diagram shading 8 years ago.  We
-also tried GPU back then, but the memory bottleneck was not great.
+for you.  This ended up as acceptance diagram shading around 2009.  We
+also tried GPU back then with an intern, but the memory bottleneck was not great.
 Now there is no memory bottleneck on GPUs, and there is also a decade
 of GPU development and a lot of GPU memory.  So you take the maths
 from acceptance diagram shading, combine it with monte-carlo, run the
-whole lot on the GPU.
+whole lot on the GPU, and that's sandman.
 
 ### What Components are Supported?
 
@@ -32,7 +32,7 @@ whole lot on the GPU.
 * Curved pieces of guide
 * Multichannel benders
 * Elliptic curves (polygon)
-* Parabolic curves (not tested yet)
+* Parabolic curves (polygon)
 * 1D wavelength monitor
 * Horizontal phase space map
 
@@ -44,7 +44,7 @@ codes.  For this reason, using any kind of parallelisation is
 desirable.  In the past, OpenMP and MPI methods have been heavily
 exploited.
 
-Around a decade ago, I had an intern and we looked at putting neutron
+I had an intern and we looked at putting neutron
 ray tracing code on the GPU.  GPGPU was fairly new back then, I think
 CUDA was maybe version 2, and what was awful at that time was the
 memory bottleneck between system RAM and graphics RAM.  It was quicker
@@ -63,12 +63,8 @@ this problem again.  There is also enough knowledge gained during the
 intervening years to do all the work on the GPU in any case, from
 generating the random trajectories to reducing the arrays in situ, so
 the RAM transfer speed is irrelevant.  Thus we arrive at the code
-here, as presented at ICANS XXII, Oxford, in March 2017.
-
-Why is it only published on github in 2018?  Too much other work was
-prioritised for us, but today I managed to find time to fix the
-elliptic geometry bug and the code is finally ready for public
-digestion.  Excellent!
+here, as presented at ICANS XXII, Oxford, in March 2017 and  
+subsequently published at http://dx.doi.org/10.3390/qubs4020024
 
 
 ## How to Use It
