@@ -30,7 +30,7 @@ the correct moderator temperatures, and ending with a window framing enormous
 "samples" the size of the moderators.  A 24 hour SANS simulation then runs 
 in about a second.  
 
-Then I learned that Jan Saroun had was first to do this and built 
+Then I learned that Jan Saroun was first to do this and built 
 bidrectionality into his simres code.  I remember that we discussed
 the problem together at the ILL back in 2008, and how adjoint 
 raytracing is basically Bayes' theorem.  I was sure he told
