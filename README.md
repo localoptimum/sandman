@@ -10,7 +10,7 @@ Neutron raytracing done 100% on NVIDIA GPU.
 
 Benchmarked against standard code (VITESS) the raw computation is x18
 faster than existing code, but there is also the geometry inversion
-which makes it crazy fast.
+which makes it plain crazy.
 
 ### Why?  What?  How?
 
@@ -18,13 +18,30 @@ Klaus Habicht and I were standing on the stairs at HMI (now HZB) around 2007,
 and I was looking between my feet through 3 floors of
 fire escape.  This gave me a funny idea that instead of simulating
 trajectories you might be able to construct a phase space volume and
-compress it flat, and the projection operation would do the whole work
-for you.  This ended up as acceptance diagram shading around 2009.  We
+compress it flat, and the projection operation would do the whole simulation work
+for you.  This later ended up as acceptance diagram shading around 2009.  We
 also tried GPU back then with an intern, but the memory bottleneck was not great.
 Now there is no memory bottleneck on GPUs, and there is also a decade
-of GPU development and a lot of GPU memory.  So you take the maths
-from acceptance diagram shading, combine it with monte-carlo, run the
-whole lot on the GPU, and that's sandman.
+of GPU development and a lot of GPU memory.  
+
+Next is the adjoint thing.  At the ILL I was always running my vitess 
+simulations backwards by creating tiny "moderators" the size of samples, using
+the correct moderator temperatures, and ending with a window framing enormous 
+"samples" the size of the moderators.  A 24 hour SANS simulation then runs 
+in about a second.  
+
+Then I learned that Jan Saroun had was first to do this and built 
+bidrectionality into his simres code.  I remember that we discussed
+the problem together at the ILL back in 2008, and how adjoint 
+raytracing is basically Bayes' theorem.  I was sure he told
+me it was Bayes' theorem, but he was equally convinced that it was me who
+came up with the Bayes' theorem argument.  However it happened, 
+it works really well, and I'm really grateful to Jan for the 
+interesting chat ;)
+
+Take the maths from acceptance diagram shading, combine it with 2D monte-carlo 
+sampling of the phase space instead of rastering the boundaries, run the whole 
+lot on the GPU, and that's sandman.
 
 ### What Components are Supported?
 
